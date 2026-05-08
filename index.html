@@ -1,0 +1,1559 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#06080c" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <title>HUD · Local Heads-Up Display</title>
+
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+          integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+
+  <style>
+    :root {
+      --bg-0: #06080c;
+      --bg-1: #0b0f15;
+      --fg-0: #f4f8ff;
+      --fg-dim: rgba(244,248,255,0.62);
+      --green: #30d158;
+      --yellow: #ffd60a;
+      --red: #ff3b30;
+      --blue: #4db6ff;
+      --glass-border: rgba(255,255,255,0.12);
+      --glass-bg: linear-gradient(135deg, rgba(8,12,18,0.42), rgba(9,11,15,0.52));
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      margin: 0;
+      min-height: 100%;
+      background:
+        radial-gradient(circle at 20% 0%, rgba(48,209,88,0.06), transparent 40%),
+        radial-gradient(circle at 80% 100%, rgba(77,182,255,0.08), transparent 45%),
+        linear-gradient(135deg, var(--bg-0), var(--bg-1));
+      color: var(--fg-0);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+      overflow-x: hidden;
+      overflow-y: auto;
+    }
+
+    .hud {
+      display: grid;
+      grid-template-columns: 1fr 1fr 320px;
+      grid-template-rows: 64px minmax(220px, 1fr) 280px 36px;
+      grid-template-areas:
+        "topbar  topbar  topbar"
+        "weather radar   extras"
+        "cams    cams    scanner"
+        "news    news    news";
+      gap: 8px;
+      padding: 8px;
+      min-height: 100vh;
+    }
+
+    /* ---------- panels ---------- */
+    .panel {
+      background: var(--glass-bg);
+      border: 1px solid var(--glass-border);
+      border-radius: 12px;
+      backdrop-filter: blur(18px) saturate(1.25);
+      -webkit-backdrop-filter: blur(18px) saturate(1.25);
+      box-shadow:
+        inset 0 1px 0 rgba(255,255,255,0.10),
+        0 6px 18px rgba(0,0,0,0.32);
+      overflow: hidden;
+      position: relative;
+    }
+
+    /* ---------- top bar ---------- */
+    .topbar {
+      grid-area: topbar;
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      align-items: center;
+      gap: 16px;
+      padding: 0 14px;
+    }
+    .zip-toggle {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+    .zip-btn {
+      background: rgba(255,255,255,0.03);
+      border: 1px solid rgba(255,255,255,0.10);
+      color: var(--fg-dim);
+      padding: 8px 12px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.3px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      white-space: nowrap;
+    }
+    .zip-btn:hover {
+      color: var(--fg-0);
+      border-color: rgba(255,255,255,0.22);
+      background: rgba(255,255,255,0.06);
+    }
+    .zip-btn.active {
+      color: var(--bg-0);
+      background: var(--green);
+      border-color: var(--green);
+      box-shadow: 0 0 16px rgba(48,209,88,0.45);
+    }
+    .zip-btn .zip-num {
+      opacity: 0.7;
+      font-weight: 500;
+      margin-left: 6px;
+    }
+    .zip-btn.active .zip-num { opacity: 0.9; }
+
+    .chips {
+      display: flex;
+      gap: 4px;
+      justify-content: flex-end;
+      flex-wrap: wrap;
+    }
+    .chip {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      padding: 5px 7px;
+      border-radius: 7px;
+      background: rgba(13,18,24,0.45);
+      border: 1px solid rgba(255,255,255,0.10);
+      font-size: 11px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+    .chip-emoji { font-size: 14px; line-height: 1; }
+    .chip-dot {
+      width: 7px; height: 7px; border-radius: 999px;
+      background: var(--green);
+      box-shadow: 0 0 10px currentColor;
+    }
+    .chip.green .chip-dot { background: var(--green); color: var(--green); }
+    .chip.yellow .chip-dot { background: var(--yellow); color: var(--yellow); }
+    .chip.red .chip-dot { background: var(--red); color: var(--red); }
+    .chip.dim { opacity: 0.78; }
+    .chip.dim .chip-value { color: var(--fg-dim); }
+    .chip.green .chip-value { color: #b8ffd0; }
+    .chip.yellow .chip-value { color: #fff1a8; }
+    .chip.red .chip-value { color: #ffd4d1; }
+    .chip-label { color: var(--fg-dim); font-size: 9px; letter-spacing: 0.5px; text-transform: uppercase; }
+    .chip-value { color: var(--fg-0); }
+
+    /* ---------- tickers ---------- */
+    .ticker {
+      display: flex;
+      align-items: center;
+      gap: 0;
+      padding: 0;
+      overflow: hidden;
+    }
+    .ticker-label {
+      flex: 0 0 auto;
+      padding: 0 14px;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.6px;
+      text-transform: uppercase;
+      border-right: 1px solid var(--glass-border);
+      white-space: nowrap;
+    }
+    .ticker-label .chip-dot { width: 8px; height: 8px; }
+    .ticker-marquee {
+      flex: 1 1 0;
+      min-width: 0;
+      overflow: hidden;
+      position: relative;
+    }
+    .ticker-track {
+      display: inline-flex;
+      white-space: nowrap;
+      animation: tick 90s linear infinite;
+      will-change: transform;
+    }
+    .ticker-marquee:hover .ticker-track { animation-play-state: paused; }
+    .ticker-item {
+      padding: 0 32px;
+      font-size: 12px;
+      font-weight: 700;
+      line-height: 36px;
+      white-space: nowrap;
+    }
+    @keyframes tick {
+      from { transform: translateX(0); }
+      to { transform: translateX(-50%); }
+    }
+    #news.ticker { grid-area: news; }
+
+    /* ---------- weather ---------- */
+    .weather { grid-area: weather; padding: 14px; display: flex; flex-direction: column; min-height: 0; }
+    .wx-head {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+    .wx-place {
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+      color: var(--fg-dim);
+    }
+    .wx-place strong { color: var(--fg-0); margin-right: 6px; }
+    .wx-current {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      align-items: center;
+      gap: 12px;
+      padding: 14px 0;
+      border-bottom: 1px solid var(--glass-border);
+      margin-bottom: 12px;
+    }
+    .wx-temp {
+      font-size: 60px;
+      font-weight: 900;
+      line-height: 1;
+      letter-spacing: -2px;
+    }
+    .wx-temp .unit { font-size: 28px; opacity: 0.7; vertical-align: top; margin-left: 2px; }
+    .wx-condition { font-size: 14px; font-weight: 700; color: var(--fg-0); margin-top: 4px; }
+    .wx-meta { font-size: 11px; color: var(--fg-dim); margin-top: 4px; }
+    .wx-icon { font-size: 56px; line-height: 1; filter: drop-shadow(0 0 14px rgba(255,255,255,0.18)); }
+
+    .wx-forecast {
+      flex: 0 0 auto;
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 4px;
+      opacity: 0.78;
+    }
+    .wx-day {
+      background: rgba(255,255,255,0.025);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 6px;
+      padding: 4px 2px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 1px;
+      text-align: center;
+      min-height: 0;
+    }
+    .wx-day-name { font-size: 9px; font-weight: 700; color: var(--fg-dim); letter-spacing: 0.3px; }
+    .wx-day-icon { font-size: 16px; line-height: 1; }
+    .wx-day-hi { font-size: 12px; font-weight: 800; color: var(--fg-0); }
+    .wx-day-lo { font-size: 10px; color: var(--fg-dim); }
+
+    /* ---------- radar ---------- */
+    .radar { grid-area: radar; padding: 0; }
+    #map { width: 100%; height: 100%; border-radius: 12px; }
+    .leaflet-container { background: #0a0e14; border-radius: 12px; }
+    .radar-overlay {
+      position: absolute;
+      top: 12px; left: 12px;
+      padding: 6px 10px;
+      background: rgba(2,4,6,0.65);
+      border: 1px solid var(--glass-border);
+      border-radius: 8px;
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+      z-index: 500;
+      pointer-events: none;
+    }
+
+    /* ---------- cams ---------- */
+    .cams { grid-area: cams; padding: 10px; }
+    .cams-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 8px;
+      padding: 0 4px;
+    }
+    .cams-title { font-size: 11px; font-weight: 800; letter-spacing: 0.5px; text-transform: uppercase; color: var(--fg-dim); }
+    .cams-title strong { color: var(--fg-0); }
+    .cams-bookmarks {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
+      padding: 0 4px 6px;
+    }
+    .cams-bookmarks a {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 3px 8px;
+      font-size: 10px;
+      font-weight: 700;
+      color: var(--blue);
+      text-decoration: none;
+      border: 1px solid rgba(77,182,255,0.32);
+      border-radius: 999px;
+      background: rgba(77,182,255,0.06);
+      transition: all 0.15s ease;
+      white-space: nowrap;
+    }
+    .cams-bookmarks a:hover {
+      color: var(--fg-0);
+      background: rgba(77,182,255,0.16);
+      border-color: rgba(77,182,255,0.55);
+    }
+    .cams-grid {
+      display: grid;
+      grid-template-columns: repeat(6, 1fr);
+      gap: 8px;
+      flex: 1 1 0;
+      min-height: 0;
+    }
+    .cams { display: flex; flex-direction: column; }
+    .cam {
+      position: relative;
+      background: #000;
+      border: 1px solid var(--glass-border);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    .cam img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .cam-label {
+      position: absolute;
+      left: 4px; right: 4px; bottom: 4px;
+      padding: 4px 6px;
+      background: rgba(0,0,0,0.72);
+      border-radius: 6px;
+      font-size: 10px;
+      font-weight: 800;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .cam-empty {
+      grid-column: 1 / -1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      gap: 8px;
+      color: var(--fg-dim);
+      font-size: 12px;
+    }
+    .cam-empty a {
+      color: var(--blue);
+      text-decoration: none;
+      font-weight: 700;
+    }
+
+    /* ---------- scanner (vertical sidebar) ---------- */
+    .scanner {
+      grid-area: scanner;
+      padding: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      min-height: 0;
+    }
+    .scanner-info {
+      flex: 0 0 auto;
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+      color: var(--fg-dim);
+    }
+    .scanner-info .feed-label {
+      display: block;
+      margin-top: 4px;
+      color: var(--fg-0);
+      font-size: 12px;
+      letter-spacing: 0.2px;
+      text-transform: none;
+    }
+    .scanner-frame {
+      flex: 1 1 0;
+      width: 100%;
+      min-height: 220px;
+      border: 0;
+      border-radius: 8px;
+      background: rgba(0,0,0,0.5);
+    }
+    .scanner-link {
+      display: block;
+      text-align: center;
+      padding: 6px;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.4px;
+      text-transform: uppercase;
+      color: var(--fg-dim);
+      text-decoration: none;
+      border: 1px solid var(--glass-border);
+      border-radius: 6px;
+      background: rgba(255,255,255,0.02);
+    }
+    .scanner-link:hover { color: var(--fg-0); border-color: rgba(255,255,255,0.22); }
+
+    /* ---------- extras (outages / internet / flights) ---------- */
+    .extras {
+      grid-area: extras;
+      padding: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      min-height: 0;
+    }
+    .extras-title {
+      font-size: 10px;
+      font-weight: 800;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+      color: var(--fg-dim);
+      padding: 0 2px 2px;
+    }
+    .ext-row {
+      flex: 1 1 0;
+      display: grid;
+      grid-template-columns: 28px 1fr auto;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 10px;
+      background: rgba(255,255,255,0.025);
+      border: 1px solid var(--glass-border);
+      border-radius: 8px;
+      color: var(--fg-0);
+      text-decoration: none;
+      transition: all 0.15s ease;
+      min-height: 0;
+    }
+    a.ext-row:hover {
+      background: rgba(255,255,255,0.05);
+      border-color: rgba(255,255,255,0.22);
+    }
+    .ext-icon {
+      font-size: 18px;
+      text-align: center;
+    }
+    .ext-text { min-width: 0; }
+    .ext-label {
+      font-size: 9px;
+      font-weight: 800;
+      color: var(--fg-dim);
+      letter-spacing: 0.4px;
+      text-transform: uppercase;
+      line-height: 11px;
+    }
+    .ext-value {
+      font-size: 12px;
+      font-weight: 800;
+      color: var(--fg-0);
+      line-height: 14px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .ext-status {
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.4px;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+    .ext-status.green { color: var(--green); }
+    .ext-status.yellow { color: var(--yellow); }
+    .ext-status.red { color: var(--red); }
+    .ext-status.dim { color: var(--fg-dim); }
+
+    /* ---------- loading ---------- */
+    .loading { color: var(--fg-dim); font-size: 11px; }
+    .err { color: var(--red); font-size: 11px; }
+
+    /* ---------- conditional banners (holiday / civic) ---------- */
+    .banner {
+      display: none;
+      align-items: center;
+      gap: 12px;
+      padding: 8px 14px;
+      margin: 0 8px 8px;
+      border-radius: 12px;
+      font-size: 13px;
+      font-weight: 800;
+      letter-spacing: 0.3px;
+      border: 1px solid var(--glass-border);
+      backdrop-filter: blur(18px) saturate(1.25);
+      -webkit-backdrop-filter: blur(18px) saturate(1.25);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.10), 0 4px 14px rgba(0,0,0,0.28);
+    }
+    .banner.show { display: flex; }
+    .banner-icon { font-size: 18px; line-height: 1; flex: 0 0 auto; }
+    .banner-text { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .banner-text strong { font-weight: 900; margin-right: 8px; }
+    .banner-meta { font-size: 11px; color: var(--fg-dim); font-weight: 700; flex: 0 0 auto; }
+
+    .holiday-banner {
+      background:
+        radial-gradient(circle at 0% 50%, rgba(48,209,88,0.16), transparent 40%),
+        linear-gradient(135deg, rgba(20,72,40,0.34), rgba(8,12,18,0.36));
+      border-color: rgba(48,209,88,0.40);
+      color: #d8ffe8;
+    }
+    .civic-banner {
+      background:
+        radial-gradient(circle at 0% 50%, rgba(255,214,10,0.16), transparent 40%),
+        linear-gradient(135deg, rgba(82,65,8,0.34), rgba(8,12,18,0.36));
+      border-color: rgba(255,214,10,0.42);
+      color: #fff1a8;
+    }
+    .civic-banner.severe {
+      background:
+        radial-gradient(circle at 0% 50%, rgba(255,59,48,0.18), transparent 40%),
+        linear-gradient(135deg, rgba(86,18,20,0.36), rgba(8,12,18,0.38));
+      border-color: rgba(255,59,48,0.46);
+      color: #ffd4d1;
+    }
+    .banner a { color: inherit; text-decoration: none; }
+    .banner a:hover { text-decoration: underline; }
+
+    /* ---------- share mode (blurs identifying labels) ---------- */
+    .share-btn {
+      cursor: pointer;
+      font-family: inherit;
+      transition: all 0.15s ease;
+    }
+    .share-btn:hover {
+      background: rgba(255,255,255,0.08);
+      border-color: rgba(255,255,255,0.22);
+    }
+    body.anon .share-btn .chip-dot { background: var(--yellow); box-shadow: 0 0 12px var(--yellow); }
+    body.anon .share-btn .chip-value { color: var(--yellow); }
+
+    /* These selectors blur every label that could identify the user's location.
+       Aesthetic, screenshot-safe, fully reversible (one click to undo). */
+    body.anon .zip-btn,
+    body.anon .wx-place,
+    body.anon #news-source,
+    body.anon .ticker-item,
+    body.anon .cam-label,
+    body.anon #cams-source,
+    body.anon .scanner-info .feed-label,
+    body.anon .extras .ext-value {
+      filter: blur(5px);
+      text-shadow: none;
+      user-select: none;
+    }
+    /* Keep the active-zip button visually identifiable (color), just blur its text */
+    body.anon .zip-btn.active {
+      filter: blur(5px);
+    }
+
+    /* ---------- mobile / narrow viewport ---------- */
+    @media (max-width: 900px) {
+      .hud {
+        grid-template-columns: 1fr;
+        grid-template-rows: auto auto 220px auto auto 320px 36px;
+        grid-template-areas:
+          "topbar"
+          "weather"
+          "radar"
+          "extras"
+          "cams"
+          "scanner"
+          "news";
+        gap: 6px;
+        padding: 6px;
+        min-height: auto;
+      }
+
+      .topbar {
+        display: flex;
+        flex-direction: column;
+        align-items: stretch;
+        gap: 8px;
+        padding: 8px;
+        height: auto;
+      }
+
+      .zip-toggle {
+        display: flex;
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        gap: 5px;
+        padding-bottom: 2px;
+        scrollbar-width: thin;
+      }
+      .zip-btn { flex: 0 0 auto; }
+
+      .chips {
+        flex-wrap: wrap;
+        justify-content: flex-start;
+        gap: 4px;
+      }
+      .chip {
+        font-size: 10px;
+        padding: 4px 6px;
+        gap: 4px;
+      }
+      .chip-emoji { font-size: 12px; }
+      .chip-label { font-size: 7.5px; }
+      .chip-value { font-size: 10px; }
+
+      /* Weather: shrink the big temp so the card doesn't dominate */
+      .wx-temp { font-size: 44px; line-height: 44px; }
+      .wx-temp .unit { font-size: 20px; }
+      .wx-icon { font-size: 40px; }
+      .wx-day-name { font-size: 8px; }
+      .wx-day-icon { font-size: 14px; }
+      .wx-day-hi { font-size: 11px; }
+      .wx-day-lo { font-size: 9px; }
+
+      /* Cams: 2-column phone grid, fixed tile height, scroll within panel if needed */
+      .cams-grid {
+        grid-template-columns: repeat(2, 1fr);
+        grid-auto-rows: 96px;
+        flex: 0 0 auto;
+      }
+      .cam-label { font-size: 9px; padding: 3px 5px; }
+
+      .cams-bookmarks a { font-size: 9px; padding: 2px 6px; }
+
+      /* Scanner sidebar becomes its own full-width panel on mobile */
+      .scanner-frame { min-height: 240px; }
+
+      /* Extras rows breathe a little more vertical room */
+      .ext-row { padding: 8px 10px; }
+      .ext-label { font-size: 8.5px; }
+      .ext-value { font-size: 11.5px; }
+      .ext-status { font-size: 9.5px; }
+
+      /* Banners: tighter on mobile */
+      .banner { padding: 6px 10px; font-size: 12px; gap: 8px; margin: 0 6px 6px; }
+      .banner-icon { font-size: 16px; }
+      .banner-meta { display: none; }
+
+      /* Radar overlay smaller */
+      .radar-overlay { font-size: 9px; padding: 4px 7px; top: 8px; left: 8px; }
+
+      /* News ticker label slightly smaller */
+      .ticker-label { min-width: 0; padding: 0 10px; font-size: 10px; }
+      .ticker-item { font-size: 11px; line-height: 36px; padding: 0 24px; }
+    }
+
+    /* very small phones (under ~480px) */
+    @media (max-width: 480px) {
+      .wx-temp { font-size: 38px; line-height: 38px; }
+      .wx-temp .unit { font-size: 18px; }
+      .cams-grid { grid-auto-rows: 84px; }
+      .cam-label { font-size: 8.5px; }
+      .chip { padding: 3px 5px; }
+      .chip-value { font-size: 9.5px; }
+    }
+  </style>
+</head>
+<body>
+
+<a class="banner holiday-banner" id="holiday-banner" href="#" target="_blank" rel="noopener">
+  <div class="banner-icon">🎉</div>
+  <div class="banner-text"><strong id="holiday-name">—</strong><span id="holiday-meta"></span></div>
+  <div class="banner-meta" id="holiday-type"></div>
+</a>
+
+<a class="banner civic-banner" id="civic-banner" href="#" target="_blank" rel="noopener">
+  <div class="banner-icon">⚠️</div>
+  <div class="banner-text"><strong id="civic-source">—</strong><span id="civic-headline">—</span></div>
+  <div class="banner-meta" id="civic-meta"></div>
+</a>
+
+<div class="hud">
+
+  <!-- top bar -->
+  <div class="panel topbar">
+    <div class="zip-toggle" id="zip-toggle"></div>
+    <div></div>
+    <div class="chips" id="chips">
+      <button class="chip share-btn" id="share-btn" type="button" title="Blur identifying labels for screenshot sharing">
+        <div class="chip-dot"></div>
+        <div>
+          <div class="chip-label">Share</div>
+          <div class="chip-value" id="share-state">Off</div>
+        </div>
+      </button>
+    </div>
+  </div>
+
+  <!-- weather card -->
+  <div class="panel weather">
+    <div class="wx-head">
+      <div class="wx-place" id="wx-place">—</div>
+      <div class="wx-place" style="text-align:right" id="wx-clock">—</div>
+    </div>
+    <div class="wx-current">
+      <div>
+        <div class="wx-temp" id="wx-temp">—<span class="unit">°F</span></div>
+        <div class="wx-condition" id="wx-condition">Loading…</div>
+        <div class="wx-meta" id="wx-meta">&nbsp;</div>
+      </div>
+      <div class="wx-icon" id="wx-icon">⛅</div>
+    </div>
+    <div class="wx-forecast" id="wx-forecast"></div>
+  </div>
+
+  <!-- radar -->
+  <div class="panel radar">
+    <div id="map"></div>
+    <div class="radar-overlay">Live Radar · RainViewer</div>
+  </div>
+
+  <!-- traffic cam grid -->
+  <div class="panel cams">
+    <div class="cams-head">
+      <div class="cams-title">Traffic Cameras · <strong id="cams-source">—</strong></div>
+      <div class="cams-title" id="cams-updated">Refreshes every 60s</div>
+    </div>
+    <div class="cams-bookmarks" id="cams-bookmarks"></div>
+    <div class="cams-grid" id="cams-grid"></div>
+  </div>
+
+  <!-- broadcastify scanner (vertical sidebar) -->
+  <div class="panel scanner">
+    <div class="scanner-info">
+      <span>Live Scanner</span>
+      <span class="feed-label" id="scanner-label">—</span>
+    </div>
+    <iframe class="scanner-frame" id="scanner-frame" src="about:blank"
+            title="Broadcastify scanner" allow="autoplay"></iframe>
+    <a class="scanner-link" id="scanner-link" href="#" target="_blank" rel="noopener">
+      Open scanner in full window ↗
+    </a>
+  </div>
+
+  <!-- outages / internet / flights -->
+  <div class="panel extras">
+    <div class="extras-title" id="extras-title">Service Status</div>
+    <a class="ext-row" id="ext-power" target="_blank" rel="noopener">
+      <div class="ext-icon">⚡</div>
+      <div class="ext-text">
+        <div class="ext-label">Power</div>
+        <div class="ext-value" id="ext-power-name">—</div>
+      </div>
+      <div class="ext-status dim">Check ↗</div>
+    </a>
+    <a class="ext-row" id="ext-internet" target="_blank" rel="noopener">
+      <div class="ext-icon">🌐</div>
+      <div class="ext-text">
+        <div class="ext-label">Internet</div>
+        <div class="ext-value" id="ext-internet-name">—</div>
+      </div>
+      <div class="ext-status dim">Downdetector ↗</div>
+    </a>
+    <a class="ext-row" id="ext-flights" target="_blank" rel="noopener">
+      <div class="ext-icon">✈️</div>
+      <div class="ext-text">
+        <div class="ext-label" id="ext-flights-label">Airport</div>
+        <div class="ext-value" id="ext-flights-name">—</div>
+      </div>
+      <div class="ext-status dim" id="ext-flights-status">Loading…</div>
+    </a>
+  </div>
+
+  <!-- local news RSS ticker (bottom) -->
+  <div class="panel ticker" id="news">
+    <div class="ticker-label" style="color:var(--blue)"><span class="chip-dot" style="background:var(--blue)"></span><span id="news-source">Local News</span></div>
+    <div class="ticker-marquee"><div class="ticker-track" id="news-track">
+      <div class="ticker-item loading">Loading headlines…</div>
+    </div></div>
+  </div>
+
+</div>
+
+<script>
+// ============================================================
+// REGION DATA — edit these to retune your dashboard
+// ============================================================
+
+const REGIONS = {
+  '02906': {
+    name: 'Providence, RI',
+    label: 'East Side',
+    lat: 41.8334, lon: -71.4017,
+    zoom: 9,
+    cams: [
+      { name: 'Henderson Bridge · Prov 1', url: 'https://www.dot.ri.gov/img/travel/camimages/Henderson%20Bridge%20Prov%201.jpg' },
+      { name: 'Henderson Bridge · Prov 2', url: 'https://www.dot.ri.gov/img/travel/camimages/Henderson%20Bridge%20Prov%202.jpg' },
+      { name: 'I-95 N @ GWB (Ex 39)',      url: 'https://www.dot.ri.gov/img/travel/camimages/95_39.4_N_CAM%20-%20Exit%2039B%20%26%2039C.jpg' },
+      { name: 'I-95 N @ Smithfield Ave',   url: 'https://www.dot.ri.gov/img/travel/camimages/95_40.0_N_CAM%20-%20Smithfield%20Ave.jpg' },
+      { name: 'I-95 N @ Branch Ave',       url: 'https://www.dot.ri.gov/img/travel/camimages/95_38.8_N_CAM%20-%20Branch%20Ave.jpg' },
+      { name: 'I-195 W @ Washington Br',   url: 'https://www.dot.ri.gov/img/travel/camimages/195-5%20I-195%20W%20%40%20Washington%20Bridge.jpg' }
+    ],
+    scanner: { id: 33869, label: 'Providence Fire Dispatch' },
+    news: { source: 'WPRI', rss: 'https://www.wpri.com/feed/' },
+    power: { name: 'Rhode Island Energy', url: 'https://outagemap.rienergy.com/OMAP' },
+    internet: { name: 'Verizon Fios', url: 'https://downdetector.com/status/verizon-fios/' },
+    airport: { iata: 'PVD', icao: 'KPVD', name: 'TF Green (PVD)' },
+    tide: { id: '8454000', name: 'Providence, RI' }
+  },
+
+  '02739': {
+    name: 'Mattapoisett, MA',
+    label: 'South Coast',
+    lat: 41.6584, lon: -70.8197,
+    zoom: 9,
+    cams: [
+      { name: 'I-195 W @ MA State Line',    url: 'https://www.dot.ri.gov/img/travel/camimages/195-8%20I-195%20W%20%40%20Mass%20State%20Line.jpg' },
+      { name: 'I-195 E @ Rt 114',           url: 'https://www.dot.ri.gov/img/travel/camimages/195-7%20I-195%20E%20%40%20Rt%20114.jpg' },
+      { name: 'I-195 W @ Washington Br',    url: 'https://www.dot.ri.gov/img/travel/camimages/195-5%20I-195%20W%20%40%20Washington%20Bridge.jpg' },
+      { name: 'Henderson Bridge · EP',      url: 'https://www.dot.ri.gov/img/travel/camimages/Henderson%20Bridge%20EP%201.jpg' },
+      { name: 'Rt 114 @ Mink St',           url: 'https://www.dot.ri.gov/img/travel/camimages/Rt%20114%20%40%20Mink%20St%20DMS%20and%20Camera.jpg' },
+      { name: 'I-195 W Split @ I-95',       url: 'https://www.dot.ri.gov/img/travel/camimages/195-1%20I-195%20W%20Split%20%40%20I-95.jpg' }
+    ],
+    camsNote: 'I-195 RI-side cams shown · MassDOT MA-side cams require TrafficLand API approval.',
+    camsLink: 'https://mass511.com/cctv',
+    bookmarks: [
+      { name: 'Hurricane Barrier · New Bedford', url: 'https://www.cruisingearth.com/port-webcams/united-states/new-bedford-massachusetts/' },
+      { name: 'Mattapoisett Boatyard', url: 'https://mattboat.com/webcams/' },
+      { name: 'Mattapoisett Harbor · Windfinder', url: 'https://www.windfinder.com/webcams/mattapoisett_mattapoisett_harbor_buzzards_bay' },
+      { name: 'Buzzards Bay Estuary cams', url: 'https://buzzardsbay.org/enjoy-buzzards-bay/weather/area-web-cams/' },
+      { name: 'New Bedford Harbor · WPRI', url: 'https://www.wpri.com/live-cams/new-bedford-harbor/' }
+    ],
+    scanner: { id: 6502, label: 'Southern RI / SE MA / E CT Public Safety' },
+    news: { source: 'SouthCoastToday', rss: 'https://www.southcoasttoday.com/arc/outboundfeeds/rss/' },
+    power: { name: 'Eversource MA', url: 'https://outagemap.eversource.com/external/default.html' },
+    internet: { name: 'Comcast Xfinity', url: 'https://downdetector.com/status/comcast-xfinity/' },
+    airport: { iata: 'BOS', icao: 'KBOS', name: 'Boston Logan (BOS)' },
+    tide: { id: '8447930', name: 'Woods Hole, MA' }
+  },
+
+  '11232': {
+    name: 'Brooklyn, NY',
+    label: 'Sunset Park',
+    lat: 40.6544, lon: -74.0040,
+    zoom: 11,
+    cams: [
+      { name: 'BQE @ Pearl St',            id: '3576217a-82e8-4f2a-854f-3de97ef37362' },
+      { name: 'BQE WB @ Union St',         id: 'ea774ec2-327b-4f3d-97ac-fd404c612cb1' },
+      { name: 'Prospect Pkwy @ 3 Ave',     id: '91c033b3-ecfd-4fb9-b27d-d256eb720789' },
+      { name: 'Atlantic Ave @ Barclays',   id: '053afe02-e1b3-4bea-9995-787e72c7fff4' },
+      { name: 'Atlantic Ave @ Vanderbilt', id: 'b5d8fe4f-1cf5-4cd8-8211-8353e68da1cb' },
+      { name: 'Prospect Expwy @ 19 St',    id: '3c079db6-117c-4e79-94ed-5178c1517091' }
+    ],
+    scanner: { id: 40184, label: 'NYPD Citywide 1 · NYC' },
+    news: { source: 'Gothamist', rss: 'https://gothamist.com/feed' },
+    power: { name: 'Con Edison', url: 'https://apps.coned.com/CEOutageMap/external/default.html' },
+    internet: { name: 'Spectrum · Optimum · Verizon', url: 'https://downdetector.com/status/spectrum/' },
+    airport: { iata: 'JFK', icao: 'KJFK', name: 'JFK International' },
+    tide: { id: '8518750', name: 'The Battery, NY' },
+    civic: { source: 'NotifyNYC', rss: 'https://a858-nycnotify.nyc.gov/notifynyc/notifications/rss', url: 'https://a858-nycnotify.nyc.gov/notifynyc/' }
+  },
+
+  '11215': {
+    name: 'Brooklyn, NY',
+    label: 'Park Slope',
+    lat: 40.6710, lon: -73.9814,
+    zoom: 11,
+    cams: [
+      { name: 'Prospect Pkwy @ 3 Ave',     id: '91c033b3-ecfd-4fb9-b27d-d256eb720789' },
+      { name: 'Atlantic Ave @ Barclays',   id: '053afe02-e1b3-4bea-9995-787e72c7fff4' },
+      { name: 'Atlantic Ave @ Vanderbilt', id: 'b5d8fe4f-1cf5-4cd8-8211-8353e68da1cb' },
+      { name: 'Flatbush Ave @ Eastern Pkwy', id: 'cb68b8b1-9093-4f2e-acf2-8133b047e8df' },
+      { name: 'Flatbush Ave @ Empire Blvd',  id: '2e43a9d0-1df8-4a38-ae20-2e0f359bb55d' },
+      { name: 'Prospect Expwy @ 19 St',    id: '3c079db6-117c-4e79-94ed-5178c1517091' }
+    ],
+    scanner: { id: 40184, label: 'NYPD Citywide 1 · NYC' },
+    news: { source: 'Gothamist', rss: 'https://gothamist.com/feed' },
+    power: { name: 'Con Edison', url: 'https://apps.coned.com/CEOutageMap/external/default.html' },
+    internet: { name: 'Spectrum · Optimum · Verizon', url: 'https://downdetector.com/status/spectrum/' },
+    airport: { iata: 'LGA', icao: 'KLGA', name: 'LaGuardia (LGA)' },
+    tide: { id: '8518750', name: 'The Battery, NY' },
+    civic: { source: 'NotifyNYC', rss: 'https://a858-nycnotify.nyc.gov/notifynyc/notifications/rss', url: 'https://a858-nycnotify.nyc.gov/notifynyc/' }
+  },
+
+  '91342': {
+    name: 'Sylmar, CA',
+    label: 'San Fernando Valley',
+    lat: 34.3084, lon: -118.4490,
+    zoom: 9,
+    cams: [
+      { name: 'I-5 @ E of SR-118 Connector', url: 'https://cwwp2.dot.ca.gov/data/d7/cctv/image/i568eastofsr118connector/i568eastofsr118connector.jpg' },
+      { name: 'I-5 @ Penrose St',            url: 'https://cwwp2.dot.ca.gov/data/d7/cctv/image/i567penrosestreet/i567penrosestreet.jpg' },
+      { name: 'I-5 @ Buena Vista',           url: 'https://cwwp2.dot.ca.gov/data/d7/cctv/image/i542buenavista/i542buenavista.jpg' },
+      { name: 'I-5 @ San Fernando On-Ramp',  url: 'https://cwwp2.dot.ca.gov/data/d7/cctv/image/i541sanfernandoonramp/i541sanfernandoonramp.jpg' },
+      { name: 'I-5 N of Burbank Blvd',       url: 'https://cwwp2.dot.ca.gov/data/d7/cctv/image/i540northofburbankblvd/i540northofburbankblvd.jpg' },
+      { name: 'I-5 @ Olive',                 url: 'https://cwwp2.dot.ca.gov/data/d7/cctv/image/i537olive/i537olive.jpg' }
+    ],
+    scanner: { id: 18435, label: 'LAFD North Division · San Fernando Valley' },
+    news: { source: 'KTLA', rss: 'https://ktla.com/feed/' },
+    power: { name: 'LADWP', url: 'https://www.ladwp.com/account/customer-service/outages/outage-map' },
+    internet: { name: 'Spectrum · AT&T', url: 'https://downdetector.com/status/spectrum/' },
+    airport: { iata: 'BUR', icao: 'KBUR', name: 'Hollywood Burbank (BUR)' },
+    tide: null  // Sylmar is inland — no tide data
+  }
+};
+
+const ZIP_ORDER = ['02906', '02739', '11232', '11215', '91342'];
+
+// ============================================================
+// State
+// ============================================================
+let activeZip = ZIP_ORDER[0];
+let map, radarLayer;
+let camRefreshTimer = null;
+
+// ============================================================
+// Utilities
+// ============================================================
+function fIcon(short) {
+  const s = (short || '').toLowerCase();
+  if (s.includes('thunder')) return '⛈️';
+  if (s.includes('snow') || s.includes('flurr') || s.includes('sleet') || s.includes('blizzard')) return '❄️';
+  if (s.includes('rain') || s.includes('shower') || s.includes('drizzle')) return '🌧️';
+  if (s.includes('fog') || s.includes('mist') || s.includes('haze')) return '🌫️';
+  if (s.includes('wind')) return '💨';
+  if (s.includes('clear') || s.includes('sunny')) return '☀️';
+  if (s.includes('partly') || s.includes('mostly') || s.includes('few clouds')) return '⛅';
+  if (s.includes('cloud') || s.includes('overcast')) return '☁️';
+  return '⛅';
+}
+
+function tickerHTML(items) {
+  // RAF-friendly: duplicate items so the marquee loops seamlessly
+  const html = items.map(t => `<div class="ticker-item">${t}</div>`).join('');
+  return html + html;
+}
+
+function escape(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+// ============================================================
+// ZIP toggle bar
+// ============================================================
+function renderToggle() {
+  const el = document.getElementById('zip-toggle');
+  el.innerHTML = ZIP_ORDER.map(zip => {
+    const r = REGIONS[zip];
+    const active = zip === activeZip ? ' active' : '';
+    return `<button class="zip-btn${active}" data-zip="${zip}">${r.label}<span class="zip-num">${zip}</span></button>`;
+  }).join('');
+  el.querySelectorAll('.zip-btn').forEach(btn => {
+    btn.addEventListener('click', () => setZip(btn.dataset.zip));
+  });
+}
+
+function setZip(zip) {
+  if (!REGIONS[zip] || zip === activeZip) return;
+  activeZip = zip;
+  renderToggle();
+  refreshAll();
+}
+
+// ============================================================
+// Clock
+// ============================================================
+function tickClock() {
+  const r = REGIONS[activeZip];
+  const now = new Date();
+  const hh = now.getHours();
+  const mm = String(now.getMinutes()).padStart(2, '0');
+  const ampm = hh >= 12 ? 'PM' : 'AM';
+  const h12 = ((hh + 11) % 12) + 1;
+  const day = now.toLocaleDateString('en-US', { weekday: 'short' });
+  const month = now.toLocaleDateString('en-US', { month: 'short' });
+  const date = now.getDate();
+  document.getElementById('wx-place').innerHTML =
+    `<strong>${r.name}</strong> · ${r.label} · ${activeZip}`;
+  document.getElementById('wx-clock').textContent = `${day}, ${month} ${date} · ${h12}:${mm} ${ampm}`;
+}
+
+// ============================================================
+// Holiday banner — date.nager.at, free public API, no key, CORS-enabled.
+// Fetches once per page load; checks if today is a US public holiday.
+// ============================================================
+async function fetchHoliday() {
+  const banner = document.getElementById('holiday-banner');
+  try {
+    const year = new Date().getFullYear();
+    const data = await fetch(`https://date.nager.at/api/v3/PublicHolidays/${year}/US`).then(x => x.json());
+    if (!Array.isArray(data)) throw new Error('Bad response');
+    const todayIso = new Date().toISOString().slice(0, 10);
+    const today = data.find(h => h.date === todayIso);
+    if (!today) {
+      banner.classList.remove('show');
+      return;
+    }
+    document.getElementById('holiday-name').textContent = today.name;
+    document.getElementById('holiday-meta').textContent =
+      today.global ? '· Federal Holiday' : '· Observance';
+    document.getElementById('holiday-type').textContent =
+      (today.types || ['Public']).join(', ');
+    banner.href = `https://en.wikipedia.org/wiki/${encodeURIComponent(today.name.replace(/\s+/g, '_'))}`;
+    banner.classList.add('show');
+  } catch (e) {
+    console.error('holiday', e);
+    banner.classList.remove('show');
+  }
+}
+
+// ============================================================
+// Civic alert banner — region-specific RSS via api.rss2json.com.
+// Hidden when region has no civic feed configured or no recent items.
+// ============================================================
+async function fetchCivic() {
+  const r = REGIONS[activeZip];
+  const banner = document.getElementById('civic-banner');
+  banner.classList.remove('show', 'severe');
+
+  if (!r.civic) return;
+
+  try {
+    const url = 'https://api.rss2json.com/v1/api.json?rss_url=' + encodeURIComponent(r.civic.rss);
+    const data = await fetch(url).then(x => x.json());
+    if (data.status !== 'ok') throw new Error(data.message || 'feed error');
+    const items = data.items || [];
+    if (!items.length) return;
+
+    // Pick the freshest item. If older than 6 hours, hide banner — we only want active stuff.
+    const latest = items[0];
+    const age = Date.now() - new Date(latest.pubDate).getTime();
+    if (age > 6 * 3600 * 1000) return;
+
+    const title = (latest.title || '').replace(/\s+/g, ' ').trim();
+    const isSevere = /flash flood|tornado|evacuation|shelter in place|active shooter|amber|civil emergency/i.test(title);
+
+    document.getElementById('civic-source').textContent = r.civic.source;
+    document.getElementById('civic-headline').textContent = ' · ' + title;
+    document.getElementById('civic-meta').textContent =
+      new Date(latest.pubDate).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    banner.href = latest.link || r.civic.url || '#';
+    if (isSevere) banner.classList.add('severe');
+    banner.classList.add('show');
+  } catch (e) {
+    console.error('civic', e);
+    banner.classList.remove('show');
+  }
+}
+
+// ============================================================
+// NWS forecast + current
+// ============================================================
+async function fetchForecast() {
+  const r = REGIONS[activeZip];
+  document.getElementById('wx-condition').textContent = 'Loading…';
+  document.getElementById('wx-forecast').innerHTML = '';
+
+  try {
+    // Note: deliberately no Accept header — NWS returns geo+json by default,
+    // and adding 'Accept: application/geo+json' triggers a CORS preflight that fails in browsers.
+    const pt = await fetch(`https://api.weather.gov/points/${r.lat},${r.lon}`).then(x => x.json());
+    const fcUrl = pt?.properties?.forecast;
+    const gridUrl = pt?.properties?.forecastGridData;
+    if (!fcUrl) throw new Error('No forecast URL');
+
+    const [fc, grid] = await Promise.all([
+      fetch(fcUrl).then(x => x.json()),
+      gridUrl ? fetch(gridUrl).then(x => x.json()).catch(() => null) : null
+    ]);
+    const periods = fc?.properties?.periods || [];
+    if (!periods.length) throw new Error('No forecast periods');
+
+    // current = first period
+    const cur = periods[0];
+    document.getElementById('wx-temp').innerHTML =
+      `${Math.round(cur.temperature)}<span class="unit">°${cur.temperatureUnit}</span>`;
+    document.getElementById('wx-condition').textContent = cur.shortForecast || '—';
+    document.getElementById('wx-icon').textContent = fIcon(cur.shortForecast);
+    const wind = cur.windSpeed ? `Wind ${cur.windSpeed} ${cur.windDirection || ''}` : '';
+    const rh = cur.relativeHumidity?.value;
+    document.getElementById('wx-meta').textContent =
+      [wind, rh != null ? `Humidity ${Math.round(rh)}%` : ''].filter(Boolean).join(' · ');
+
+    // pair day + night periods into daily entries (5 shown)
+    const days = [];
+    for (const p of periods) {
+      if (p.isDaytime) {
+        days.push({ name: p.name, hi: p.temperature, icon: fIcon(p.shortForecast), lo: null });
+      } else if (days.length) {
+        days[days.length - 1].lo = p.temperature;
+      } else {
+        days.push({ name: p.name, hi: null, lo: p.temperature, icon: fIcon(p.shortForecast) });
+      }
+    }
+    const out = days.slice(0, 5).map(d => `
+      <div class="wx-day">
+        <div class="wx-day-name">${escape((d.name || '').split(' ')[0].slice(0,3).toUpperCase())}</div>
+        <div class="wx-day-icon">${d.icon}</div>
+        <div class="wx-day-hi">${d.hi != null ? Math.round(d.hi) + '°' : '—'}</div>
+        <div class="wx-day-lo">${d.lo != null ? Math.round(d.lo) + '°' : '—'}</div>
+      </div>
+    `).join('');
+    document.getElementById('wx-forecast').innerHTML = out;
+
+    // Top-bar chips
+    updateChip('temp', `${Math.round(cur.temperature)}°${cur.temperatureUnit}`, 'green');
+    if (rh != null) {
+      const h = Math.round(rh);
+      updateChip('humidity', `${h}%`, h >= 80 ? 'yellow' : h >= 30 ? 'green' : 'yellow');
+    }
+
+    // 24h precip total — sum quantitativePrecipitation values from gridpoint forecast.
+    // NWS returns mm by default; convert to inches for display.
+    if (grid) {
+      const qp = grid?.properties?.quantitativePrecipitation?.values || [];
+      const now = Date.now();
+      const cutoff = now + 24 * 3600 * 1000;
+      let totalMm = 0;
+      for (const v of qp) {
+        const start = new Date(v.validTime.split('/')[0]).getTime();
+        if (start >= now && start < cutoff) totalMm += (v.value || 0);
+      }
+      const totalIn = totalMm * 0.0393701;
+      const tone = totalIn >= 0.5 ? 'red' : totalIn >= 0.1 ? 'yellow' : 'green';
+      updateChip('rain24h', `${totalIn.toFixed(2)} in`, tone);
+    } else {
+      updateChip('rain24h', '—', 'dim');
+    }
+  } catch (e) {
+    console.error(e);
+    document.getElementById('wx-condition').textContent = 'Forecast unavailable';
+    document.getElementById('wx-meta').innerHTML = '<span class="err">' + escape(e.message) + '</span>';
+    updateChip('humidity', '—', 'dim');
+    updateChip('rain24h', '—', 'dim');
+  }
+}
+
+// ============================================================
+// NWS active alerts
+// ============================================================
+async function fetchAlerts() {
+  const r = REGIONS[activeZip];
+  try {
+    const data = await fetch(`https://api.weather.gov/alerts/active?point=${r.lat},${r.lon}`).then(x => x.json());
+    const features = data?.features || [];
+
+    if (!features.length) {
+      updateChip('alerts', '0', 'green');
+      return;
+    }
+
+    // Determine worst severity to color the chip
+    let worstSev = 'green';
+    for (const f of features) {
+      const sev = (f.properties?.severity || '').toLowerCase();
+      if (sev === 'extreme' || sev === 'severe') { worstSev = 'red'; break; }
+      if (sev === 'moderate' || sev === 'minor') worstSev = 'yellow';
+    }
+    updateChip('alerts', String(features.length), worstSev);
+  } catch (e) {
+    console.error(e);
+    updateChip('alerts', '?', 'yellow');
+  }
+}
+
+// ============================================================
+// Local news RSS via rss2json (CORS-friendly proxy, no key)
+// ============================================================
+async function fetchNews() {
+  const r = REGIONS[activeZip];
+  document.getElementById('news-source').textContent = r.news.source;
+  const trackEl = document.getElementById('news-track');
+
+  try {
+    const url = 'https://api.rss2json.com/v1/api.json?rss_url=' + encodeURIComponent(r.news.rss);
+    const data = await fetch(url).then(x => x.json());
+    if (data.status !== 'ok') throw new Error(data.message || 'feed error');
+    const items = (data.items || []).slice(0, 12).map(it => {
+      const t = (it.title || '').replace(/\s+/g, ' ').trim();
+      return escape(t);
+    });
+    trackEl.innerHTML = items.length
+      ? tickerHTML(items)
+      : tickerHTML(['No recent headlines from ' + r.news.source]);
+  } catch (e) {
+    console.error(e);
+    trackEl.innerHTML = tickerHTML(['News feed unavailable: ' + escape(e.message)]);
+  }
+}
+
+// ============================================================
+// Radar (Leaflet + RainViewer)
+// ============================================================
+function initMap() {
+  const r = REGIONS[activeZip];
+  map = L.map('map', { zoomControl: false, attributionControl: false }).setView([r.lat, r.lon], r.zoom);
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png', {
+    subdomains: 'abcd',
+    maxZoom: 18
+  }).addTo(map);
+  L.circleMarker([r.lat, r.lon], {
+    radius: 6, color: '#30d158', fillColor: '#30d158', fillOpacity: 0.9, weight: 2
+  }).addTo(map);
+
+  // Container starts at 0 height inside CSS Grid `1fr`; tell Leaflet to recompute
+  // tile coords once the row has been sized, and again on window resize.
+  setTimeout(() => map.invalidateSize(), 100);
+  setTimeout(() => map.invalidateSize(), 600);
+  window.addEventListener('resize', () => map.invalidateSize());
+}
+
+async function loadRadar() {
+  try {
+    const idx = await fetch('https://api.rainviewer.com/public/weather-maps.json').then(x => x.json());
+    const host = idx?.host || 'https://tilecache.rainviewer.com';
+    const last = idx?.radar?.past?.slice(-1)[0];
+    if (!last) return;
+    // Color scheme 4 (Original) is the most reliable for global coverage at low/mid zoom.
+    // Tile size 256, smooth=1, snow=1.
+    const tileUrl = `${host}${last.path}/256/{z}/{x}/{y}/4/1_1.png`;
+    if (radarLayer) map.removeLayer(radarLayer);
+    radarLayer = L.tileLayer(tileUrl, { opacity: 0.72, maxZoom: 12, minZoom: 3 }).addTo(map);
+  } catch (e) { console.error('radar', e); }
+}
+
+function recenterMap() {
+  const r = REGIONS[activeZip];
+  if (map) map.setView([r.lat, r.lon], r.zoom, { animate: true });
+}
+
+// ============================================================
+// Traffic cams
+// ============================================================
+function camImageUrl(cam) {
+  if (cam.url) return cam.url;
+  if (cam.id) return `https://webcams.nyctmc.org/api/cameras/${cam.id}/image`;
+  return null;
+}
+
+function renderBookmarks() {
+  const r = REGIONS[activeZip];
+  const el = document.getElementById('cams-bookmarks');
+  if (!r.bookmarks || !r.bookmarks.length) { el.innerHTML = ''; return; }
+  el.innerHTML = r.bookmarks.map(b =>
+    `<a href="${escape(b.url)}" target="_blank" rel="noopener">${escape(b.name)} ↗</a>`
+  ).join('');
+}
+
+function renderCams() {
+  const r = REGIONS[activeZip];
+  document.getElementById('cams-source').textContent = r.name + ' · ' + r.label;
+  renderBookmarks();
+  const grid = document.getElementById('cams-grid');
+
+  if (camRefreshTimer) { clearInterval(camRefreshTimer); camRefreshTimer = null; }
+
+  if (!r.cams.length) {
+    grid.innerHTML = `
+      <div class="cam-empty">
+        <div>${escape(r.camsNote || 'No cameras configured for this region.')}</div>
+        ${r.camsLink ? `<a href="${escape(r.camsLink)}" target="_blank" rel="noopener">Open external map →</a>` : ''}
+      </div>`;
+    return;
+  }
+
+  const cb = Date.now();
+  grid.innerHTML = r.cams.map((c, i) => {
+    const u = camImageUrl(c);
+    const src = u + (u.includes('?') ? '&' : '?') + 't=' + cb;
+    return `
+      <div class="cam">
+        <img id="cam-img-${i}" src="${escape(src)}" alt="${escape(c.name)}"
+             onerror="this.style.opacity='0.3';this.alt='Cam offline'" />
+        <div class="cam-label">${escape(c.name)}</div>
+      </div>`;
+  }).join('');
+
+  camRefreshTimer = setInterval(() => {
+    const t = Date.now();
+    r.cams.forEach((c, i) => {
+      const img = document.getElementById('cam-img-' + i);
+      if (!img) return;
+      const u = camImageUrl(c);
+      if (!u) return;
+      img.src = u + (u.includes('?') ? '&' : '?') + 't=' + t;
+    });
+  }, 60000);
+}
+
+// ============================================================
+// Broadcastify scanner
+// ============================================================
+function loadScanner() {
+  const r = REGIONS[activeZip];
+  document.getElementById('scanner-label').textContent = r.scanner.label;
+  document.getElementById('scanner-frame').src =
+    `https://www.broadcastify.com/webPlayer/${r.scanner.id}`;
+  document.getElementById('scanner-link').href =
+    `https://www.broadcastify.com/listen/feed/${r.scanner.id}`;
+}
+
+// ============================================================
+// Extras: power outages + internet status + flight delays
+// ============================================================
+function renderExtras() {
+  const r = REGIONS[activeZip];
+  const power = r.power || { name: '—', url: '#' };
+  const internet = r.internet || { name: '—', url: '#' };
+  const airport = r.airport || { iata: '—', icao: '', name: '—' };
+
+  document.getElementById('ext-power').href = power.url;
+  document.getElementById('ext-power-name').textContent = power.name;
+  document.getElementById('ext-internet').href = internet.url;
+  document.getElementById('ext-internet-name').textContent = internet.name;
+  document.getElementById('ext-flights').href =
+    `https://flightaware.com/live/airport/${airport.icao}`;
+  document.getElementById('ext-flights-label').textContent = `Airport · ${airport.iata}`;
+  document.getElementById('ext-flights-name').textContent = airport.name;
+
+  fetchFlights();
+  fetchTides();
+  fetchSunMoon();
+}
+
+// ============================================================
+// Sun + moon
+// ============================================================
+function getMoonPhase(date = new Date()) {
+  // Reference new moon: 2000-01-06 18:14 UTC. Synodic month: 29.53058867 days.
+  const refMs = Date.UTC(2000, 0, 6, 18, 14);
+  const synodic = 29.53058867 * 86400000;
+  const elapsed = ((date.getTime() - refMs) % synodic + synodic) % synodic;
+  const phase = elapsed / synodic; // 0 = new, 0.5 = full, 1 = next new
+
+  const PHASES = [
+    { name: 'New Moon',         emoji: '🌑' },
+    { name: 'Waxing Crescent',  emoji: '🌒' },
+    { name: 'First Quarter',    emoji: '🌓' },
+    { name: 'Waxing Gibbous',   emoji: '🌔' },
+    { name: 'Full Moon',        emoji: '🌕' },
+    { name: 'Waning Gibbous',   emoji: '🌖' },
+    { name: 'Last Quarter',     emoji: '🌗' },
+    { name: 'Waning Crescent',  emoji: '🌘' }
+  ];
+  let i;
+  if (phase < 0.0625) i = 0;
+  else if (phase < 0.1875) i = 1;
+  else if (phase < 0.3125) i = 2;
+  else if (phase < 0.4375) i = 3;
+  else if (phase < 0.5625) i = 4;
+  else if (phase < 0.6875) i = 5;
+  else if (phase < 0.8125) i = 6;
+  else if (phase < 0.9375) i = 7;
+  else i = 0;
+
+  // Smooth illumination curve: 0% at new, 100% at full
+  const illum = Math.round((1 - Math.cos(2 * Math.PI * phase)) / 2 * 100);
+  return { ...PHASES[i], illum, phase };
+}
+
+async function fetchSunMoon() {
+  const r = REGIONS[activeZip];
+
+  // Sun: api.sunrise-sunset.org — free, no key, CORS-enabled.
+  try {
+    const data = await fetch(
+      `https://api.sunrise-sunset.org/json?lat=${r.lat}&lng=${r.lon}&formatted=0`
+    ).then(x => x.json());
+    if (data.status !== 'OK') throw new Error(data.status);
+    const set = new Date(data.results.sunset);
+    const h = set.getHours();
+    const m = String(set.getMinutes()).padStart(2, '0');
+    const ampm = h >= 12 ? 'PM' : 'AM';
+    const h12 = ((h + 11) % 12) + 1;
+    const now = Date.now();
+    const tone = set.getTime() < now ? 'dim' : 'green';
+    updateChip('sunset', `${h12}:${m} ${ampm}`, tone);
+  } catch (e) {
+    console.error('sun', e);
+    updateChip('sunset', 'Unavailable', 'dim');
+  }
+
+  // Moon: computed locally, no network call needed
+  const moon = getMoonPhase();
+  const tone = moon.illum >= 75 ? 'green' : moon.illum >= 25 ? 'yellow' : 'dim';
+  updateChip('moon', `${moon.illum}%`, tone, moon.emoji);
+}
+
+async function fetchTides() {
+  const r = REGIONS[activeZip];
+  if (!r.tide) {
+    updateChip('tide', 'Inland', 'dim');
+    return;
+  }
+  updateChip('tide', 'Loading…', 'dim');
+
+  const today = new Date();
+  const yyyy = today.getFullYear();
+  const mm = String(today.getMonth() + 1).padStart(2, '0');
+  const dd = String(today.getDate()).padStart(2, '0');
+  const tomorrow = new Date(today.getTime() + 86400000);
+  const yyyy2 = tomorrow.getFullYear();
+  const mm2 = String(tomorrow.getMonth() + 1).padStart(2, '0');
+  const dd2 = String(tomorrow.getDate()).padStart(2, '0');
+
+  const url =
+    `https://api.tidesandcurrents.noaa.gov/api/prod/datagetter` +
+    `?product=predictions&application=hud-dashboard` +
+    `&begin_date=${yyyy}${mm}${dd}&end_date=${yyyy2}${mm2}${dd2}` +
+    `&datum=MLLW&station=${r.tide.id}` +
+    `&time_zone=lst_ldt&units=english&interval=hilo&format=json`;
+
+  try {
+    const data = await fetch(url).then(x => x.json());
+    if (data.error) throw new Error(data.error.message || 'NOAA error');
+    const preds = data?.predictions || [];
+    const now = Date.now();
+    const next = preds.find(p => new Date(p.t).getTime() > now);
+    if (!next) throw new Error('No upcoming tide');
+    const when = new Date(next.t);
+    const hh = when.getHours();
+    const mn = String(when.getMinutes()).padStart(2, '0');
+    const h12 = ((hh + 11) % 12) + 1;
+    const ampm = hh >= 12 ? 'PM' : 'AM';
+    const hOrL = next.type === 'H' ? 'HIGH' : 'LOW';
+    const ft = parseFloat(next.v).toFixed(1);
+    updateChip('tide', `${hOrL} ${h12}:${mn} · ${ft} ft`, next.type === 'H' ? 'green' : 'yellow');
+  } catch (e) {
+    console.error('tides', e);
+    updateChip('tide', 'Unavailable', 'dim');
+  }
+}
+
+async function fetchFlights() {
+  const r = REGIONS[activeZip];
+  const statusEl = document.getElementById('ext-flights-status');
+  statusEl.className = 'ext-status dim';
+  statusEl.textContent = 'Loading…';
+
+  if (!r.airport) { statusEl.textContent = 'N/A'; return; }
+
+  // FAA ASWS public endpoint — uses IATA code, returns JSON, supports CORS.
+  // Format: https://soa.smext.faa.gov/asws/api/airport/status/{IATA}
+  try {
+    const data = await fetch(`https://soa.smext.faa.gov/asws/api/airport/status/${r.airport.iata}`)
+      .then(x => x.ok ? x.json() : Promise.reject(new Error('HTTP ' + x.status)));
+    const status = data?.Status?.Type || data?.Status?.MinDelay ? 'delay' : (data?.Delay ? 'delay' : 'normal');
+    const reason = data?.Status?.Reason || data?.Status?.Type || '';
+    const minD = data?.Status?.MinDelay || data?.Status?.AvgDelay || '';
+
+    if (data?.Delay === true || data?.Status?.ClosureBegin || reason || minD) {
+      statusEl.className = 'ext-status yellow';
+      statusEl.textContent = (reason ? reason : 'Delays') + (minD ? ` · ${minD}` : '');
+    } else {
+      statusEl.className = 'ext-status green';
+      statusEl.textContent = 'On time';
+    }
+  } catch (e) {
+    // FAA endpoint is sometimes flaky / CORS-restricted; degrade to a click-through
+    statusEl.className = 'ext-status dim';
+    statusEl.textContent = 'Tap to check ↗';
+  }
+}
+
+// ============================================================
+// Status chips
+// ============================================================
+const CHIP_DEFS = {
+  temp:     { label: 'Temp',     emoji: '🌡️' },
+  humidity: { label: 'Humidity', emoji: '💧' },
+  rain24h:  { label: 'Rain 24h', emoji: '☔' },
+  sunset:   { label: 'Sunset',   emoji: '🌅' },
+  tide:     { label: 'Tide',     emoji: '🌊' },
+  moon:     { label: 'Moon',     emoji: '🌖' },  // emoji is dynamic, see fetchSunMoon
+  alerts:   { label: 'Alerts',   emoji: '🚨' }
+};
+const CHIP_ORDER = ['temp', 'humidity', 'rain24h', 'sunset', 'tide', 'moon', 'alerts'];
+const CHIPS = {};
+
+function updateChip(key, value, tone, emoji) {
+  CHIPS[key] = { value, tone, emoji };
+  renderChips();
+}
+
+function renderChips() {
+  const shareBtn = document.getElementById('share-btn');
+  const chipsEl = document.getElementById('chips');
+  Array.from(chipsEl.children).forEach(c => { if (c !== shareBtn) c.remove(); });
+  const html = CHIP_ORDER.map(k => {
+    const def = CHIP_DEFS[k] || {};
+    const c = CHIPS[k] || {};
+    const emoji = c.emoji || def.emoji || '•';
+    return `
+      <div class="chip ${escape(c.tone || 'dim')}" title="${escape(def.label || k)}">
+        <div class="chip-emoji">${emoji}</div>
+        <div>
+          <div class="chip-label">${escape(def.label || k)}</div>
+          <div class="chip-value">${escape(c.value || '—')}</div>
+        </div>
+      </div>`;
+  }).join('');
+  shareBtn.insertAdjacentHTML('beforebegin', html);
+}
+
+function initShareMode() {
+  const btn = document.getElementById('share-btn');
+  const state = document.getElementById('share-state');
+  btn.addEventListener('click', () => {
+    document.body.classList.toggle('anon');
+    const on = document.body.classList.contains('anon');
+    state.textContent = on ? 'On' : 'Off';
+  });
+}
+
+// ============================================================
+// Refresh orchestration
+// ============================================================
+function refreshAll() {
+  tickClock();
+  recenterMap();
+  fetchForecast();
+  fetchAlerts();
+  fetchNews();
+  renderCams();
+  loadScanner();
+  renderExtras();
+  fetchCivic();
+}
+
+// initial
+window.addEventListener('DOMContentLoaded', () => {
+  initShareMode();
+  renderToggle();
+  renderChips();
+  initMap();
+  loadRadar();
+  refreshAll();
+  fetchHoliday();
+
+  // periodic refreshers
+  setInterval(tickClock, 30 * 1000);
+  setInterval(fetchForecast, 10 * 60 * 1000);
+  setInterval(fetchAlerts, 5 * 60 * 1000);
+  setInterval(fetchNews, 10 * 60 * 1000);
+  setInterval(loadRadar, 5 * 60 * 1000);
+  setInterval(fetchFlights, 5 * 60 * 1000);
+  setInterval(fetchTides, 30 * 60 * 1000);
+  setInterval(fetchSunMoon, 60 * 60 * 1000);
+  setInterval(fetchCivic, 5 * 60 * 1000);
+  setInterval(fetchHoliday, 6 * 3600 * 1000);
+});
+</script>
+
+</body>
+</html>
