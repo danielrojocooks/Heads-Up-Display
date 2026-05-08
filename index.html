@@ -58,7 +58,7 @@
       min-height: 100vh;
     }
     body.has-calendar .hud {
-      grid-template-rows: minmax(64px, auto) minmax(220px, 1fr) 280px 116px 36px;
+      grid-template-rows: minmax(64px, auto) minmax(220px, 1fr) 280px 132px 36px;
     }
 
     /* ---------- panels ---------- */
@@ -533,15 +533,27 @@
       border: 1px solid var(--glass-border);
       border-radius: 8px;
       display: grid;
-      grid-template-rows: auto 1fr auto;
+      grid-template-rows: auto 1fr;
       gap: 4px;
       box-shadow: inset 0 1px 0 rgba(255,255,255,0.05);
       overflow: hidden;
+      text-decoration: none;
+      color: inherit;
+      cursor: pointer;
+      transition: background 0.15s ease, border-color 0.15s ease;
+    }
+    .cal-event:hover {
+      background: rgba(255,255,255,0.06);
+      border-color: rgba(255,255,255,0.28);
     }
     .cal-event.today {
       border-color: rgba(48,209,88,0.55);
-      background: rgba(48,209,88,0.06);
+      background: rgba(48,209,88,0.07);
       box-shadow: inset 0 1px 0 rgba(255,255,255,0.10), 0 0 14px rgba(48,209,88,0.20);
+    }
+    .cal-event.today:hover {
+      background: rgba(48,209,88,0.12);
+      border-color: rgba(48,209,88,0.75);
     }
     .cal-event-meta {
       display: flex;
@@ -673,7 +685,7 @@
         min-height: auto;
       }
       body.has-calendar .hud {
-        grid-template-rows: auto auto 220px auto auto 320px 110px 36px;
+        grid-template-rows: auto auto 220px auto auto 320px 140px 36px;
       }
 
       .topbar {
@@ -915,7 +927,9 @@ const REGIONS = {
     state: 'US-RI',
     calendar: {
       name: 'Wheeler School',
-      url: 'webcal://wheelerschool.myschoolapp.com/podium/feed/iCal.aspx?z=%2fTeGdhn07osPZthk8B2Fhuc693aPgkU5aK1aA7esA8EhyTtsj2M8CMPFs6RJHCW24pTSrp0Lf9RcLdCnM7idKg%3d%3d'
+      url: 'webcal://wheelerschool.myschoolapp.com/podium/feed/iCal.aspx?z=%2fTeGdhn07osPZthk8B2Fhuc693aPgkU5aK1aA7esA8EhyTtsj2M8CMPFs6RJHCW24pTSrp0Lf9RcLdCnM7idKg%3d%3d',
+      // Click-through fallback when an event has no URL field
+      homepage: 'https://www.wheelerschool.org/'
     }
   },
 
@@ -1660,6 +1674,7 @@ function parseICal(text) {
     if (baseKey === 'SUMMARY')      cur.summary = decode(val);
     else if (baseKey === 'DESCRIPTION') cur.description = decode(val);
     else if (baseKey === 'LOCATION')    cur.location = decode(val);
+    else if (baseKey === 'URL')         cur.url = val.trim();
     else if (baseKey === 'DTSTART')     Object.assign(cur, parseICalDate(val, key, 'start'));
     else if (baseKey === 'DTEND')       Object.assign(cur, parseICalDate(val, key, 'end'));
   }
@@ -1751,23 +1766,25 @@ async function fetchCalendar() {
              d.getDate() === t.getDate();
     };
 
+    const homepage = r.calendar.homepage || '#';
     stripEl.innerHTML = upcoming.map(ev => {
       const today = isToday(ev.start) ? ' today' : '';
       const time = ev.startAllDay ? 'All day' : fmtTime(ev.start);
-      // Fall back to description, then location, then a placeholder if SUMMARY is empty
       const title =
         (ev.summary && ev.summary.trim()) ||
         (ev.description && ev.description.trim().split('\n')[0]) ||
         (ev.location && ev.location.trim()) ||
         '(no title)';
+      const href = ev.url || homepage;
+      const titleAttr = title + (ev.location ? ' · ' + ev.location : '');
       return `
-        <div class="cal-event${today}" title="${escape(title)}${ev.location ? ' · ' + escape(ev.location) : ''}">
+        <a class="cal-event${today}" href="${escape(href)}" target="_blank" rel="noopener" title="${escape(titleAttr)}">
           <div class="cal-event-meta">
             <div class="cal-event-date">${escape(fmtDate(ev.start))}</div>
             <div class="cal-event-time">${escape(time)}</div>
           </div>
           <div class="cal-event-summary">${escape(title)}</div>
-        </div>`;
+        </a>`;
     }).join('');
   } catch (e) {
     console.error('calendar', e);
