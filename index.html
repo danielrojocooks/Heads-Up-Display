@@ -46,11 +46,11 @@
     .hud {
       display: grid;
       grid-template-columns: 1fr 1fr 320px;
-      grid-template-rows: minmax(64px, auto) minmax(220px, 1fr) 280px 0 36px;
+      grid-template-rows: minmax(64px, auto) minmax(220px, 1fr) 240px 0 36px;
       grid-template-areas:
         "topbar   topbar   topbar"
         "weather  radar    extras"
-        "cams     cams     scanner"
+        "cams     cams     cams"
         "calendar calendar calendar"
         "news     news     news";
       gap: 8px;
@@ -324,7 +324,7 @@
     }
     .cams-grid {
       display: grid;
-      grid-template-columns: repeat(6, 1fr);
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
       gap: 8px;
       flex: 1 1 0;
       min-height: 0;
@@ -425,30 +425,11 @@
       font-weight: 700;
     }
 
-    /* ---------- scanner (vertical sidebar) ---------- */
-    .scanner {
-      grid-area: scanner;
-      padding: 10px;
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-      min-height: 0;
-    }
-    .scanner-info {
-      flex: 0 0 auto;
-      font-size: 11px;
-      font-weight: 800;
-      letter-spacing: 0.5px;
-      text-transform: uppercase;
-      color: var(--fg-dim);
-    }
-    .scanner-info .feed-label {
-      display: block;
-      margin-top: 4px;
-      color: var(--fg-0);
-      font-size: 12px;
-      letter-spacing: 0.2px;
-      text-transform: none;
+    /* ---------- scanner inline inside extras panel ---------- */
+    .extras-divider {
+      height: 1px;
+      margin: 8px 0 4px;
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.10), transparent);
     }
     .scanner-player {
       flex: 0 0 auto;
@@ -795,14 +776,13 @@
     @media (max-width: 900px) {
       .hud {
         grid-template-columns: 1fr;
-        grid-template-rows: auto auto 220px auto auto 320px 0 36px;
+        grid-template-rows: auto auto 220px auto auto 0 36px;
         grid-template-areas:
           "topbar"
           "weather"
           "radar"
           "extras"
           "cams"
-          "scanner"
           "calendar"
           "news";
         gap: 6px;
@@ -810,7 +790,7 @@
         min-height: auto;
       }
       body.has-calendar .hud {
-        grid-template-rows: auto auto 220px auto auto 320px 140px 36px;
+        grid-template-rows: auto auto 220px auto auto 140px 36px;
       }
 
       .topbar {
@@ -969,24 +949,6 @@
     <div class="cams-grid" id="cams-grid"></div>
   </div>
 
-  <!-- broadcastify scanner — slim inline audio player with fallback launch link -->
-  <div class="panel scanner">
-    <div class="scanner-info">
-      <span>Live Scanner</span>
-      <span class="feed-label" id="scanner-label">—</span>
-    </div>
-    <div class="scanner-player" id="scanner-player">
-      <button class="scanner-play-btn" id="scanner-play-btn" type="button" aria-label="Play / pause">▶</button>
-      <div class="scanner-meta">
-        <div class="scanner-station" id="scanner-station">—</div>
-        <div class="scanner-status" id="scanner-status">Tap to listen</div>
-      </div>
-    </div>
-    <a class="scanner-fallback" id="scanner-launch" href="#" target="_blank" rel="noopener">
-      Stream blocked — open in Broadcastify ↗
-    </a>
-    <audio id="scanner-audio" preload="none" crossorigin="anonymous"></audio>
-  </div>
 
   <!-- outages / internet / flights -->
   <div class="panel extras">
@@ -1015,6 +977,21 @@
       </div>
       <div class="ext-status dim" id="ext-flights-status">Loading…</div>
     </a>
+
+    <!-- live scanner (inline audio player + fallback launch) -->
+    <div class="extras-divider"></div>
+    <div class="extras-title" id="scanner-label">Live Scanner</div>
+    <div class="scanner-player" id="scanner-player">
+      <button class="scanner-play-btn" id="scanner-play-btn" type="button" aria-label="Play / pause">▶</button>
+      <div class="scanner-meta">
+        <div class="scanner-station" id="scanner-station">—</div>
+        <div class="scanner-status" id="scanner-status">Tap to listen</div>
+      </div>
+    </div>
+    <a class="scanner-fallback" id="scanner-launch" href="#" target="_blank" rel="noopener">
+      Stream blocked — open in Broadcastify ↗
+    </a>
+    <audio id="scanner-audio" preload="none" crossorigin="anonymous"></audio>
   </div>
 
   <!-- calendar (iCal feed, region-specific, hidden if not configured) -->
@@ -1050,7 +1027,7 @@ const REGIONS = {
     cams: [
       { name: 'Henderson Bridge · WB (Prov)', url: 'https://www.dot.ri.gov/img/travel/camimages/Henderson%20Bridge%20Prov%201.jpg' },
       { name: 'Henderson Bridge · EB (EP)',   url: 'https://www.dot.ri.gov/img/travel/camimages/Henderson%20Bridge%20EP%201.jpg' },
-      { name: 'I-95 N @ GWB (Ex 39)',         url: 'https://www.dot.ri.gov/img/travel/camimages/95_39.4_N_CAM%20-%20Exit%2039B%20%26%2039C.jpg' },
+      { name: 'I-195 W @ Washington Bridge',  url: 'https://www.dot.ri.gov/img/travel/camimages/195-5%20I-195%20W%20%40%20Washington%20Bridge.jpg' },
       { name: 'I-95 / I-195 Interchange',     url: 'https://www.dot.ri.gov/img/travel/camimages/195-1%20I-195%20W%20Split%20%40%20I-95.jpg' },
       { name: 'I-95 N @ Smithfield Ave',      url: 'https://www.dot.ri.gov/img/travel/camimages/95_40.0_N_CAM%20-%20Smithfield%20Ave.jpg' },
       { name: 'I-95 S @ Garden St',           url: 'https://www.dot.ri.gov/img/travel/camimages/95_41.0_S_CAM%20-%20Garden%20St.jpg' }
