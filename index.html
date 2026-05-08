@@ -205,17 +205,30 @@
     }
     #news.ticker { grid-area: news; }
 
-    /* ---------- weather ---------- */
-    .weather { grid-area: weather; padding: 14px; display: flex; flex-direction: column; min-height: 0; }
+    /* ---------- weather (clickable → NWS detailed forecast) ---------- */
+    .weather {
+      grid-area: weather;
+      padding: 12px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      min-height: 0;
+      text-decoration: none;
+      color: inherit;
+      transition: background 0.15s ease, border-color 0.15s ease;
+    }
+    .weather:hover {
+      background: linear-gradient(135deg, rgba(8,12,18,0.55), rgba(9,11,15,0.65));
+      border-color: rgba(255,255,255,0.20);
+    }
     .wx-head {
       display: grid;
       grid-template-columns: 1fr auto;
       align-items: center;
       gap: 12px;
-      margin-bottom: 12px;
     }
     .wx-place {
-      font-size: 11px;
+      font-size: 10.5px;
       font-weight: 800;
       letter-spacing: 0.5px;
       text-transform: uppercase;
@@ -224,23 +237,62 @@
     .wx-place strong { color: var(--fg-0); margin-right: 6px; }
     .wx-current {
       display: grid;
-      grid-template-columns: 1fr auto;
+      grid-template-columns: auto 1fr auto;
       align-items: center;
       gap: 12px;
-      padding: 14px 0;
+      padding-bottom: 8px;
       border-bottom: 1px solid var(--glass-border);
-      margin-bottom: 12px;
     }
+    .wx-icon { font-size: 40px; line-height: 1; filter: drop-shadow(0 0 12px rgba(255,255,255,0.18)); }
     .wx-temp {
-      font-size: 60px;
+      font-size: 38px;
       font-weight: 900;
       line-height: 1;
-      letter-spacing: -2px;
+      letter-spacing: -1.4px;
+      color: #ffffff;
     }
-    .wx-temp .unit { font-size: 28px; opacity: 0.7; vertical-align: top; margin-left: 2px; }
-    .wx-condition { font-size: 14px; font-weight: 700; color: var(--fg-0); margin-top: 4px; }
-    .wx-meta { font-size: 11px; color: var(--fg-dim); margin-top: 4px; }
-    .wx-icon { font-size: 56px; line-height: 1; filter: drop-shadow(0 0 14px rgba(255,255,255,0.18)); }
+    .wx-temp .unit { font-size: 18px; opacity: 0.7; vertical-align: top; margin-left: 2px; }
+    .wx-condition { font-size: 12px; font-weight: 800; color: var(--fg-0); margin-bottom: 2px; }
+    .wx-meta { font-size: 10px; color: var(--fg-dim); font-weight: 700; }
+    .wx-now-text { min-width: 0; }
+
+    .wx-stats {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 6px;
+    }
+    .wx-stat {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 8px;
+      background: rgba(255,255,255,0.03);
+      border: 1px solid var(--glass-border);
+      border-radius: 7px;
+      min-width: 0;
+    }
+    .wx-stat-emoji { font-size: 14px; line-height: 1; flex: 0 0 auto; }
+    .wx-stat-text { min-width: 0; }
+    .wx-stat-label {
+      font-size: 8px;
+      font-weight: 800;
+      letter-spacing: 0.4px;
+      text-transform: uppercase;
+      color: var(--fg-dim);
+      line-height: 9px;
+    }
+    .wx-stat-value {
+      font-size: 11px;
+      font-weight: 900;
+      color: var(--fg-0);
+      line-height: 12px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .wx-stat.green .wx-stat-value { color: #b8ffd0; }
+    .wx-stat.yellow .wx-stat-value { color: #fff1a8; }
+    .wx-stat.red .wx-stat-value { color: #ffd4d1; }
 
     .wx-forecast {
       flex: 0 0 auto;
@@ -916,22 +968,54 @@
     </div>
   </div>
 
-  <!-- weather card -->
-  <div class="panel weather">
+  <!-- weather card — click to open NWS detailed forecast -->
+  <a class="panel weather" id="weather-panel" href="#" target="_blank" rel="noopener" title="Click for NWS detailed forecast">
     <div class="wx-head">
       <div class="wx-place" id="wx-place">—</div>
       <div class="wx-place" style="text-align:right" id="wx-clock">—</div>
     </div>
     <div class="wx-current">
-      <div>
+      <div class="wx-icon" id="wx-icon">⛅</div>
+      <div class="wx-now-text">
         <div class="wx-temp" id="wx-temp">—<span class="unit">°F</span></div>
+      </div>
+      <div style="text-align:right">
         <div class="wx-condition" id="wx-condition">Loading…</div>
         <div class="wx-meta" id="wx-meta">&nbsp;</div>
       </div>
-      <div class="wx-icon" id="wx-icon">⛅</div>
+    </div>
+    <div class="wx-stats">
+      <div class="wx-stat" id="wx-stat-sunset">
+        <div class="wx-stat-emoji">🌅</div>
+        <div class="wx-stat-text">
+          <div class="wx-stat-label">Sunset</div>
+          <div class="wx-stat-value" id="wx-stat-sunset-val">—</div>
+        </div>
+      </div>
+      <div class="wx-stat" id="wx-stat-moon">
+        <div class="wx-stat-emoji" id="wx-stat-moon-emoji">🌖</div>
+        <div class="wx-stat-text">
+          <div class="wx-stat-label">Moon</div>
+          <div class="wx-stat-value" id="wx-stat-moon-val">—</div>
+        </div>
+      </div>
+      <div class="wx-stat" id="wx-stat-tide">
+        <div class="wx-stat-emoji">🌊</div>
+        <div class="wx-stat-text">
+          <div class="wx-stat-label">Tide</div>
+          <div class="wx-stat-value" id="wx-stat-tide-val">—</div>
+        </div>
+      </div>
+      <div class="wx-stat" id="wx-stat-rain">
+        <div class="wx-stat-emoji">☔</div>
+        <div class="wx-stat-text">
+          <div class="wx-stat-label">Rain 24h</div>
+          <div class="wx-stat-value" id="wx-stat-rain-val">—</div>
+        </div>
+      </div>
     </div>
     <div class="wx-forecast" id="wx-forecast"></div>
-  </div>
+  </a>
 
   <!-- radar -->
   <div class="panel radar">
@@ -1218,6 +1302,19 @@ function tickClock() {
   document.getElementById('wx-place').innerHTML =
     `<strong>${r.name}</strong> · ${r.label} · ${activeZip}`;
   document.getElementById('wx-clock').textContent = `${day}, ${month} ${date} · ${h12}:${mm} ${ampm}`;
+  // Click-through goes to the NWS detailed forecast page for this lat/lon
+  document.getElementById('weather-panel').href =
+    `https://forecast.weather.gov/MapClick.php?lat=${r.lat}&lon=${r.lon}`;
+}
+
+function setWxStat(id, value, tone) {
+  const valEl = document.getElementById(`wx-stat-${id}-val`);
+  const wrapEl = document.getElementById(`wx-stat-${id}`);
+  if (valEl) valEl.textContent = value;
+  if (wrapEl) {
+    wrapEl.classList.remove('green', 'yellow', 'red');
+    if (tone) wrapEl.classList.add(tone);
+  }
 }
 
 // ============================================================
@@ -1353,13 +1450,6 @@ async function fetchForecast() {
     `).join('');
     document.getElementById('wx-forecast').innerHTML = out;
 
-    // Top-bar chips
-    updateChip('temp', `${Math.round(cur.temperature)}°${cur.temperatureUnit}`, 'green');
-    if (rh != null) {
-      const h = Math.round(rh);
-      updateChip('humidity', `${h}%`, h >= 80 ? 'yellow' : h >= 30 ? 'green' : 'yellow');
-    }
-
     // 24h precip total — sum quantitativePrecipitation values from gridpoint forecast.
     // NWS returns mm by default; convert to inches for display.
     if (grid) {
@@ -1373,16 +1463,15 @@ async function fetchForecast() {
       }
       const totalIn = totalMm * 0.0393701;
       const tone = totalIn >= 0.5 ? 'red' : totalIn >= 0.1 ? 'yellow' : 'green';
-      updateChip('rain24h', `${totalIn.toFixed(2)} in`, tone);
+      setWxStat('rain', `${totalIn.toFixed(2)} in`, tone);
     } else {
-      updateChip('rain24h', '—', 'dim');
+      setWxStat('rain', '—', null);
     }
   } catch (e) {
     console.error(e);
     document.getElementById('wx-condition').textContent = 'Forecast unavailable';
     document.getElementById('wx-meta').innerHTML = '<span class="err">' + escape(e.message) + '</span>';
-    updateChip('humidity', '—', 'dim');
-    updateChip('rain24h', '—', 'dim');
+    setWxStat('rain', '—', null);
   }
 }
 
@@ -1696,26 +1785,27 @@ async function fetchSunMoon() {
     const ampm = h >= 12 ? 'PM' : 'AM';
     const h12 = ((h + 11) % 12) + 1;
     const now = Date.now();
-    const tone = set.getTime() < now ? 'dim' : 'green';
-    updateChip('sunset', `${h12}:${m} ${ampm}`, tone);
+    const tone = set.getTime() < now ? null : 'green';
+    setWxStat('sunset', `${h12}:${m} ${ampm}`, tone);
   } catch (e) {
     console.error('sun', e);
-    updateChip('sunset', 'Unavailable', 'dim');
+    setWxStat('sunset', 'Unavailable', null);
   }
 
   // Moon: computed locally, no network call needed
   const moon = getMoonPhase();
-  const tone = moon.illum >= 75 ? 'green' : moon.illum >= 25 ? 'yellow' : 'dim';
-  updateChip('moon', `${moon.illum}%`, tone, moon.emoji);
+  const moonTone = moon.illum >= 75 ? 'green' : moon.illum >= 25 ? 'yellow' : null;
+  setWxStat('moon', `${moon.illum}% lit`, moonTone);
+  document.getElementById('wx-stat-moon-emoji').textContent = moon.emoji;
 }
 
 async function fetchTides() {
   const r = REGIONS[activeZip];
   if (!r.tide) {
-    updateChip('tide', 'Inland', 'dim');
+    setWxStat('tide', 'Inland', null);
     return;
   }
-  updateChip('tide', 'Loading…', 'dim');
+  setWxStat('tide', 'Loading…', null);
 
   const today = new Date();
   const yyyy = today.getFullYear();
@@ -1747,10 +1837,10 @@ async function fetchTides() {
     const ampm = hh >= 12 ? 'PM' : 'AM';
     const hOrL = next.type === 'H' ? 'HIGH' : 'LOW';
     const ft = parseFloat(next.v).toFixed(1);
-    updateChip('tide', `${hOrL} ${h12}:${mn} · ${ft} ft`, next.type === 'H' ? 'green' : 'yellow');
+    setWxStat('tide', `${hOrL} ${h12}:${mn} · ${ft}'`, next.type === 'H' ? 'green' : 'yellow');
   } catch (e) {
     console.error('tides', e);
-    updateChip('tide', 'Unavailable', 'dim');
+    setWxStat('tide', 'Unavailable', null);
   }
 }
 
@@ -1778,7 +1868,7 @@ const CHIP_DEFS = {
   moon:     { label: 'Moon',     emoji: '🌖' },  // emoji is dynamic, see fetchSunMoon
   alerts:   { label: 'Alerts',   emoji: '🚨' }
 };
-const CHIP_ORDER = ['temp', 'humidity', 'rain24h', 'sunset', 'tide', 'moon', 'alerts'];
+const CHIP_ORDER = ['alerts'];
 const CHIPS = {};
 
 function updateChip(key, value, tone, emoji) {
