@@ -1001,7 +1001,8 @@ const REGIONS = {
     power: { name: 'LADWP', url: 'https://www.ladwp.com/account/customer-service/outages/outage-map' },
     internet: { name: 'Spectrum · AT&T', url: 'https://downdetector.com/status/spectrum/' },
     airport: { iata: 'BUR', icao: 'KBUR', name: 'Hollywood Burbank (BUR)' },
-    tide: null  // Sylmar is inland — no tide data
+    tide: null,  // Sylmar is inland — no tide data
+    state: 'US-CA'
   }
 };
 
@@ -1090,19 +1091,29 @@ function tickClock() {
 // ============================================================
 async function fetchHoliday() {
   const banner = document.getElementById('holiday-banner');
+  const userState = REGIONS[activeZip]?.state;
   try {
     const year = new Date().getFullYear();
     const data = await fetch(`https://date.nager.at/api/v3/PublicHolidays/${year}/US`).then(x => x.json());
     if (!Array.isArray(data)) throw new Error('Bad response');
     const todayIso = new Date().toISOString().slice(0, 10);
-    const today = data.find(h => h.date === todayIso);
+
+    // Show holiday IF: it's federal/global, OR it's a state observance for the user's state.
+    // Otherwise skip — no point telling someone in RI about Truman Day (Missouri only).
+    const today = data.find(h => {
+      if (h.date !== todayIso) return false;
+      if (h.global) return true;
+      if (Array.isArray(h.counties) && userState && h.counties.includes(userState)) return true;
+      return false;
+    });
+
     if (!today) {
       banner.classList.remove('show');
       return;
     }
     document.getElementById('holiday-name').textContent = today.name;
     document.getElementById('holiday-meta').textContent =
-      today.global ? '· Federal Holiday' : '· Observance';
+      today.global ? '· Federal Holiday' : `· ${userState ? userState.replace('US-', '') : 'State'} Observance`;
     document.getElementById('holiday-type').textContent =
       (today.types || ['Public']).join(', ');
     banner.href = `https://en.wikipedia.org/wiki/${encodeURIComponent(today.name.replace(/\s+/g, '_'))}`;
@@ -1749,6 +1760,7 @@ function refreshAll() {
   renderExtras();
   fetchCivic();
   fetchCalendar();
+  fetchHoliday();
 }
 
 // initial
