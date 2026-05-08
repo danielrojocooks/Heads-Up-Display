@@ -1046,7 +1046,7 @@ const REGIONS = {
     name: 'Providence, RI',
     label: 'East Side',
     lat: 41.8334, lon: -71.4017,
-    zoom: 9,
+    zoom: 7,
     cams: [
       { name: 'Henderson Bridge · WB (Prov)', url: 'https://www.dot.ri.gov/img/travel/camimages/Henderson%20Bridge%20Prov%201.jpg' },
       { name: 'Henderson Bridge · EB (EP)',   url: 'https://www.dot.ri.gov/img/travel/camimages/Henderson%20Bridge%20EP%201.jpg' },
@@ -1068,7 +1068,7 @@ const REGIONS = {
     name: 'Mattapoisett, MA',
     label: 'South Coast',
     lat: 41.6584, lon: -70.8197,
-    zoom: 9,
+    zoom: 7,
     cams: [
       { name: 'I-195 W @ MA State Line',    url: 'https://www.dot.ri.gov/img/travel/camimages/195-8%20I-195%20W%20%40%20Mass%20State%20Line.jpg' },
       { name: 'I-195 E @ Rt 114',           url: 'https://www.dot.ri.gov/img/travel/camimages/195-7%20I-195%20E%20%40%20Rt%20114.jpg' },
@@ -1099,7 +1099,7 @@ const REGIONS = {
     name: 'Brooklyn, NY',
     label: 'Sunset Park',
     lat: 40.6544, lon: -74.0040,
-    zoom: 11,
+    zoom: 8,
     cams: [
       { name: 'BQE @ Pearl St',            id: '3576217a-82e8-4f2a-854f-3de97ef37362' },
       { name: 'BQE WB @ Union St',         id: 'ea774ec2-327b-4f3d-97ac-fd404c612cb1' },
@@ -1122,7 +1122,7 @@ const REGIONS = {
     name: 'Brooklyn, NY',
     label: 'Park Slope',
     lat: 40.6710, lon: -73.9814,
-    zoom: 11,
+    zoom: 8,
     cams: [
       { name: 'Prospect Pkwy @ 3 Ave',     id: '91c033b3-ecfd-4fb9-b27d-d256eb720789' },
       { name: 'Atlantic Ave @ Barclays',   id: '053afe02-e1b3-4bea-9995-787e72c7fff4' },
@@ -1145,7 +1145,7 @@ const REGIONS = {
     name: 'Sylmar, CA',
     label: 'San Fernando Valley',
     lat: 34.3084, lon: -118.4490,
-    zoom: 9,
+    zoom: 7,
     cams: [
       { name: 'I-5 @ E of SR-118 Connector', url: 'https://cwwp2.dot.ca.gov/data/d7/cctv/image/i568eastofsr118connector/i568eastofsr118connector.jpg' },
       { name: 'I-5 @ Penrose St',            url: 'https://cwwp2.dot.ca.gov/data/d7/cctv/image/i567penrosestreet/i567penrosestreet.jpg' },
@@ -1489,11 +1489,11 @@ async function loadRadar() {
     const host = idx?.host || 'https://tilecache.rainviewer.com';
     const last = idx?.radar?.past?.slice(-1)[0];
     if (!last) return;
-    // Color scheme 4 (Original) is the most reliable for global coverage at low/mid zoom.
-    // Tile size 256, smooth=1, snow=1.
-    const tileUrl = `${host}${last.path}/256/{z}/{x}/{y}/4/1_1.png`;
+    // Color scheme 2 (Universal Blue) is what RainViewer ships in their own examples
+    // and reliably has tiles at zooms 1–10. Tile size 256, smooth=1, snow=1.
+    const tileUrl = `${host}${last.path}/256/{z}/{x}/{y}/2/1_1.png`;
     if (radarLayer) map.removeLayer(radarLayer);
-    radarLayer = L.tileLayer(tileUrl, { opacity: 0.72, maxZoom: 12, minZoom: 3 }).addTo(map);
+    radarLayer = L.tileLayer(tileUrl, { opacity: 0.72 }).addTo(map);
   } catch (e) { console.error('radar', e); }
 }
 
