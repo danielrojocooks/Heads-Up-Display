@@ -1061,6 +1061,14 @@
       </div>
       <div class="ext-status dim" id="ext-flights-status">Loading…</div>
     </a>
+    <a class="ext-row" id="ext-parking" target="_blank" rel="noopener" style="display:none">
+      <div class="ext-icon">🅿️</div>
+      <div class="ext-text">
+        <div class="ext-label">Parking</div>
+        <div class="ext-value" id="ext-parking-name">—</div>
+      </div>
+      <div class="ext-status dim">Tap to check ↗</div>
+    </a>
 
     <!-- live scanner (inline audio player + fallback launch) -->
     <div class="extras-divider"></div>
@@ -1158,7 +1166,12 @@ const REGIONS = {
     internet: { name: 'Comcast Xfinity', url: 'https://downdetector.com/status/comcast-xfinity/' },
     airport: { iata: 'BOS', icao: 'KBOS', name: 'Boston Logan (BOS)' },
     tide: { id: '8447930', name: 'Woods Hole, MA' },
-    state: 'US-MA'
+    state: 'US-MA',
+    calendar: {
+      name: 'Mattapoisett · Town Events',
+      url: 'https://www.mattapoisett.gov/common/modules/iCalendar/iCalendar.aspx?feed=calendar&catID=14',
+      homepage: 'https://www.mattapoisett.gov/calendar.aspx'
+    }
   },
 
   '11232': {
@@ -1181,7 +1194,8 @@ const REGIONS = {
     airport: { iata: 'JFK', icao: 'KJFK', name: 'JFK International' },
     tide: { id: '8518750', name: 'The Battery, NY' },
     civic: { source: 'NotifyNYC', rss: 'https://a858-nycnotify.nyc.gov/notifynyc/notifications/rss', url: 'https://a858-nycnotify.nyc.gov/notifynyc/' },
-    state: 'US-NY'
+    state: 'US-NY',
+    parking: { name: 'NYC Alt Side', url: 'https://portal.311.nyc.gov/article/?kanumber=KA-01011' }
   },
 
   '11215': {
@@ -1204,7 +1218,8 @@ const REGIONS = {
     airport: { iata: 'LGA', icao: 'KLGA', name: 'LaGuardia (LGA)' },
     tide: { id: '8518750', name: 'The Battery, NY' },
     civic: { source: 'NotifyNYC', rss: 'https://a858-nycnotify.nyc.gov/notifynyc/notifications/rss', url: 'https://a858-nycnotify.nyc.gov/notifynyc/' },
-    state: 'US-NY'
+    state: 'US-NY',
+    parking: { name: 'NYC Alt Side', url: 'https://portal.311.nyc.gov/article/?kanumber=KA-01011' }
   },
 
   '91342': {
@@ -1733,6 +1748,16 @@ function renderExtras() {
     `https://flightaware.com/live/airport/${airport.icao}`;
   document.getElementById('ext-flights-label').textContent = `Airport · ${airport.iata}`;
   document.getElementById('ext-flights-name').textContent = airport.name;
+
+  // Parking row — only shown when region has a parking config (Brooklyn ZIPs)
+  const parkingEl = document.getElementById('ext-parking');
+  if (r.parking) {
+    parkingEl.style.display = '';
+    parkingEl.href = r.parking.url;
+    document.getElementById('ext-parking-name').textContent = r.parking.name;
+  } else {
+    parkingEl.style.display = 'none';
+  }
 
   fetchFlights();
   fetchTides();
