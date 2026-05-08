@@ -789,6 +789,13 @@
       border-color: rgba(255,59,48,0.46);
       color: #ffd4d1;
     }
+    .parking-banner {
+      background:
+        radial-gradient(circle at 0% 50%, rgba(77,182,255,0.16), transparent 40%),
+        linear-gradient(135deg, rgba(8,42,72,0.36), rgba(8,12,18,0.38));
+      border-color: rgba(77,182,255,0.42);
+      color: #c9ecff;
+    }
     .banner a { color: inherit; text-decoration: none; }
     .banner a:hover { text-decoration: underline; }
 
@@ -943,6 +950,12 @@
   <div class="banner-icon">⚠️</div>
   <div class="banner-text"><strong id="civic-source">—</strong><span id="civic-headline">—</span></div>
   <div class="banner-meta" id="civic-meta"></div>
+</a>
+
+<a class="banner parking-banner" id="parking-banner" href="#" target="_blank" rel="noopener">
+  <div class="banner-icon">🅿️</div>
+  <div class="banner-text"><strong>Alt Side Parking Suspended</strong> · <span id="parking-reason"></span></div>
+  <div class="banner-meta">NYC</div>
 </a>
 
 <div class="cam-modal" id="cam-modal" hidden>
@@ -1374,6 +1387,69 @@ async function fetchHoliday() {
     console.error('holiday', e);
     banner.classList.remove('show');
   }
+}
+
+// ============================================================
+// NYC Alternate Side Parking — 2026 suspension calendar.
+// Source: NYC DOT's annually-published list at
+//   https://www.nyc.gov/site/dot/motorists/alternate-side-parking.page
+// These are approximate; religious holidays' dates are estimates and may shift
+// by ±1 day depending on observance. Update annually each December.
+// ============================================================
+const NYC_ASP_2026 = {
+  '2026-01-01': "New Year's Day",
+  '2026-01-19': 'MLK Jr. Day',
+  '2026-02-12': "Lincoln's Birthday",
+  '2026-02-16': "Presidents' Day",
+  '2026-02-17': 'Lunar New Year',
+  '2026-03-03': 'Purim',
+  '2026-04-02': 'Holy Thursday / Passover',
+  '2026-04-03': 'Good Friday / Passover',
+  '2026-04-09': 'Holy Thursday (Eastern Orthodox)',
+  '2026-04-10': 'Passover (7th day)',
+  '2026-05-22': 'Shavuot',
+  '2026-05-25': 'Memorial Day',
+  '2026-05-27': 'Eid al-Adha',
+  '2026-07-03': 'Independence Day (observed)',
+  '2026-07-23': "Tisha B'Av",
+  '2026-08-15': 'Assumption Day',
+  '2026-09-07': 'Labor Day',
+  '2026-09-12': 'Rosh Hashanah (1st day)',
+  '2026-09-13': 'Rosh Hashanah (2nd day)',
+  '2026-09-21': 'Yom Kippur',
+  '2026-09-26': 'Sukkot (1st day)',
+  '2026-09-27': 'Sukkot (2nd day)',
+  '2026-10-03': 'Shemini Atzeret',
+  '2026-10-04': 'Simchat Torah',
+  '2026-11-01': 'All Saints Day',
+  '2026-11-03': 'Election Day',
+  '2026-11-08': 'Diwali',
+  '2026-11-11': 'Veterans Day',
+  '2026-11-26': 'Thanksgiving',
+  '2026-12-08': 'Immaculate Conception',
+  '2026-12-25': 'Christmas Day'
+};
+
+function checkParking() {
+  const r = REGIONS[activeZip];
+  const banner = document.getElementById('parking-banner');
+  banner.classList.remove('show');
+
+  if (!r.parking) return;
+
+  // Build local-date ISO key (avoid UTC offset shifting the date by a day)
+  const now = new Date();
+  const yyyy = now.getFullYear();
+  const mm = String(now.getMonth() + 1).padStart(2, '0');
+  const dd = String(now.getDate()).padStart(2, '0');
+  const todayIso = `${yyyy}-${mm}-${dd}`;
+
+  const reason = NYC_ASP_2026[todayIso];
+  if (!reason) return;
+
+  document.getElementById('parking-reason').textContent = reason;
+  banner.href = r.parking.url;
+  banner.classList.add('show');
 }
 
 // ============================================================
@@ -2145,6 +2221,7 @@ function refreshAll() {
   fetchCivic();
   fetchCalendar();
   fetchHoliday();
+  checkParking();
 }
 
 // initial
