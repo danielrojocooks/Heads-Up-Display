@@ -46,7 +46,7 @@
     .hud {
       display: grid;
       grid-template-columns: 1fr 1fr 320px;
-      grid-template-rows: 64px minmax(220px, 1fr) 280px 0 36px;
+      grid-template-rows: minmax(64px, auto) minmax(220px, 1fr) 280px 0 36px;
       grid-template-areas:
         "topbar   topbar   topbar"
         "weather  radar    extras"
@@ -58,7 +58,7 @@
       min-height: 100vh;
     }
     body.has-calendar .hud {
-      grid-template-rows: 64px minmax(220px, 1fr) 280px 92px 36px;
+      grid-template-rows: minmax(64px, auto) minmax(220px, 1fr) 280px 116px 36px;
     }
 
     /* ---------- panels ---------- */
@@ -81,8 +81,9 @@
       display: grid;
       grid-template-columns: auto 1fr auto;
       align-items: center;
-      gap: 16px;
-      padding: 0 14px;
+      gap: 12px;
+      padding: 6px 12px;
+      min-height: 64px;
     }
     .zip-toggle {
       display: flex;
@@ -526,25 +527,32 @@
     }
     .cal-event {
       flex: 0 0 auto;
-      min-width: 138px;
-      max-width: 240px;
-      padding: 6px 9px;
+      width: 220px;
+      padding: 8px 11px;
       background: rgba(255,255,255,0.025);
       border: 1px solid var(--glass-border);
       border-radius: 8px;
-      display: flex;
-      flex-direction: column;
-      gap: 1px;
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      gap: 4px;
       box-shadow: inset 0 1px 0 rgba(255,255,255,0.05);
+      overflow: hidden;
     }
     .cal-event.today {
-      border-color: rgba(48,209,88,0.40);
-      box-shadow: inset 0 1px 0 rgba(255,255,255,0.10), 0 0 12px rgba(48,209,88,0.16);
+      border-color: rgba(48,209,88,0.55);
+      background: rgba(48,209,88,0.06);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.10), 0 0 14px rgba(48,209,88,0.20);
+    }
+    .cal-event-meta {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
     }
     .cal-event-date {
-      font-size: 9px;
-      font-weight: 800;
-      letter-spacing: 0.4px;
+      font-size: 9.5px;
+      font-weight: 900;
+      letter-spacing: 0.5px;
       text-transform: uppercase;
       color: var(--green);
     }
@@ -552,16 +560,20 @@
     .cal-event-time {
       font-size: 9.5px;
       color: var(--fg-dim);
-      font-weight: 700;
+      font-weight: 800;
+      white-space: nowrap;
     }
     .cal-event-summary {
-      font-size: 11.5px;
+      font-size: 13px;
+      line-height: 15px;
       font-weight: 800;
       color: var(--fg-0);
-      white-space: nowrap;
+      display: -webkit-box;
+      -webkit-line-clamp: 3;
+      -webkit-box-orient: vertical;
       overflow: hidden;
       text-overflow: ellipsis;
-      margin-top: 1px;
+      align-self: start;
     }
 
     /* ---------- conditional banners (holiday / civic) ---------- */
@@ -1619,29 +1631,37 @@ function initShareMode() {
 // TZID parameters are not interpreted; floating times are treated as local
 // (good enough for school calendars where the user is in the calendar's timezone).
 function parseICal(text) {
+  // RFC 5545 line-folding: continuation lines start with space or tab
   const unfolded = text.replace(/\r?\n[ \t]/g, '');
   const lines = unfolded.split(/\r?\n/);
   const events = [];
   let cur = null;
-  for (const line of lines) {
-    if (line === 'BEGIN:VEVENT') cur = {};
-    else if (line === 'END:VEVENT' && cur) { events.push(cur); cur = null; }
-    else if (cur) {
-      const colon = line.indexOf(':');
-      if (colon < 0) continue;
-      const key = line.slice(0, colon);
-      const val = line.slice(colon + 1);
-      const baseKey = key.split(';')[0];
-      if (baseKey === 'SUMMARY') {
-        cur.summary = val.replace(/\\,/g, ',').replace(/\\;/g, ';').replace(/\\n/gi, ' ').trim();
-      } else if (baseKey === 'LOCATION') {
-        cur.location = val;
-      } else if (baseKey === 'DTSTART') {
-        Object.assign(cur, parseICalDate(val, key, 'start'));
-      } else if (baseKey === 'DTEND') {
-        Object.assign(cur, parseICalDate(val, key, 'end'));
-      }
-    }
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!line) continue;
+    const upper = line.toUpperCase();
+    if (upper === 'BEGIN:VEVENT') { cur = {}; continue; }
+    if (upper === 'END:VEVENT' && cur) { events.push(cur); cur = null; continue; }
+    if (!cur) continue;
+
+    const colon = line.indexOf(':');
+    if (colon < 0) continue;
+    const key = line.slice(0, colon);
+    const val = line.slice(colon + 1);
+    const baseKey = key.split(';')[0].toUpperCase();
+    const decode = (s) => s
+      .replace(/\\\\/g, '')
+      .replace(/\\,/g, ',')
+      .replace(/\\;/g, ';')
+      .replace(/\\n/gi, ' ')
+      .replace(//g, '\\')
+      .trim();
+
+    if (baseKey === 'SUMMARY')      cur.summary = decode(val);
+    else if (baseKey === 'DESCRIPTION') cur.description = decode(val);
+    else if (baseKey === 'LOCATION')    cur.location = decode(val);
+    else if (baseKey === 'DTSTART')     Object.assign(cur, parseICalDate(val, key, 'start'));
+    else if (baseKey === 'DTEND')       Object.assign(cur, parseICalDate(val, key, 'end'));
   }
   return events;
 }
@@ -1734,11 +1754,19 @@ async function fetchCalendar() {
     stripEl.innerHTML = upcoming.map(ev => {
       const today = isToday(ev.start) ? ' today' : '';
       const time = ev.startAllDay ? 'All day' : fmtTime(ev.start);
+      // Fall back to description, then location, then a placeholder if SUMMARY is empty
+      const title =
+        (ev.summary && ev.summary.trim()) ||
+        (ev.description && ev.description.trim().split('\n')[0]) ||
+        (ev.location && ev.location.trim()) ||
+        '(no title)';
       return `
-        <div class="cal-event${today}" title="${escape(ev.summary || '')}${ev.location ? ' · ' + escape(ev.location) : ''}">
-          <div class="cal-event-date">${escape(fmtDate(ev.start))}</div>
-          <div class="cal-event-time">${escape(time)}</div>
-          <div class="cal-event-summary">${escape(ev.summary || '(untitled)')}</div>
+        <div class="cal-event${today}" title="${escape(title)}${ev.location ? ' · ' + escape(ev.location) : ''}">
+          <div class="cal-event-meta">
+            <div class="cal-event-date">${escape(fmtDate(ev.start))}</div>
+            <div class="cal-event-time">${escape(time)}</div>
+          </div>
+          <div class="cal-event-summary">${escape(title)}</div>
         </div>`;
     }).join('');
   } catch (e) {
