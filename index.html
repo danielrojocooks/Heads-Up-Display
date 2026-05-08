@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="theme-color" content="#06080c" />
+  <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <title>HUD · Local Heads-Up Display</title>
@@ -1548,34 +1549,15 @@ async function fetchTides() {
 }
 
 async function fetchFlights() {
+  // Note: the FAA's public ASWS API (soa.smext.faa.gov/asws/api/airport/status)
+  // was retired and the host no longer resolves. There's no equivalent free, no-key
+  // endpoint right now, so the airport row just acts as a click-through to FlightAware.
+  // If a working public source surfaces, this is the place to wire it in.
   const r = REGIONS[activeZip];
   const statusEl = document.getElementById('ext-flights-status');
+  if (!r.airport) { statusEl.textContent = 'N/A'; statusEl.className = 'ext-status dim'; return; }
   statusEl.className = 'ext-status dim';
-  statusEl.textContent = 'Loading…';
-
-  if (!r.airport) { statusEl.textContent = 'N/A'; return; }
-
-  // FAA ASWS public endpoint — uses IATA code, returns JSON, supports CORS.
-  // Format: https://soa.smext.faa.gov/asws/api/airport/status/{IATA}
-  try {
-    const data = await fetch(`https://soa.smext.faa.gov/asws/api/airport/status/${r.airport.iata}`)
-      .then(x => x.ok ? x.json() : Promise.reject(new Error('HTTP ' + x.status)));
-    const status = data?.Status?.Type || data?.Status?.MinDelay ? 'delay' : (data?.Delay ? 'delay' : 'normal');
-    const reason = data?.Status?.Reason || data?.Status?.Type || '';
-    const minD = data?.Status?.MinDelay || data?.Status?.AvgDelay || '';
-
-    if (data?.Delay === true || data?.Status?.ClosureBegin || reason || minD) {
-      statusEl.className = 'ext-status yellow';
-      statusEl.textContent = (reason ? reason : 'Delays') + (minD ? ` · ${minD}` : '');
-    } else {
-      statusEl.className = 'ext-status green';
-      statusEl.textContent = 'On time';
-    }
-  } catch (e) {
-    // FAA endpoint is sometimes flaky / CORS-restricted; degrade to a click-through
-    statusEl.className = 'ext-status dim';
-    statusEl.textContent = 'Tap to check ↗';
-  }
+  statusEl.textContent = 'Tap to check ↗';
 }
 
 // ============================================================
@@ -1682,6 +1664,31 @@ function parseICalDate(val, fullKey, prefix) {
   return { [prefix]: date, [prefix + 'AllDay']: false };
 }
 
+// Try a chain of public CORS proxies until one succeeds. allorigins is the
+// best-known but flakes regularly; corsproxy.io and codetabs are decent fallbacks.
+async function fetchViaCorsProxies(targetUrl) {
+  const encoded = encodeURIComponent(targetUrl);
+  const proxies = [
+    `https://corsproxy.io/?${encoded}`,
+    `https://api.allorigins.win/raw?url=${encoded}`,
+    `https://api.codetabs.com/v1/proxy/?quest=${targetUrl}`,
+    targetUrl  // last resort: direct, will only work if server sets Access-Control-Allow-Origin
+  ];
+  let lastError = null;
+  for (const url of proxies) {
+    try {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const text = await res.text();
+      if (text && text.length > 50) return text;  // sanity-check non-empty payload
+      throw new Error('Empty response');
+    } catch (e) {
+      lastError = e;
+    }
+  }
+  throw lastError || new Error('All proxies failed');
+}
+
 async function fetchCalendar() {
   const r = REGIONS[activeZip];
   if (!r.calendar) {
@@ -1696,14 +1703,8 @@ async function fetchCalendar() {
   stripEl.innerHTML = '<div class="loading" style="padding:6px 8px;font-size:11px;">Loading…</div>';
 
   try {
-    // Convert webcal:// → https:// for fetch, then route through allorigins CORS proxy
-    // since myschoolapp.com / iCal feeds rarely send Access-Control-Allow-Origin.
     const httpsUrl = r.calendar.url.replace(/^webcal:\/\//i, 'https://');
-    const proxyUrl = 'https://api.allorigins.win/raw?url=' + encodeURIComponent(httpsUrl);
-    const text = await fetch(proxyUrl).then(x => {
-      if (!x.ok) throw new Error('HTTP ' + x.status);
-      return x.text();
-    });
+    const text = await fetchViaCorsProxies(httpsUrl);
     const events = parseICal(text);
 
     const now = Date.now();
