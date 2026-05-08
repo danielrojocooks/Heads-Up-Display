@@ -45,15 +45,19 @@
     .hud {
       display: grid;
       grid-template-columns: 1fr 1fr 320px;
-      grid-template-rows: 64px minmax(220px, 1fr) 280px 36px;
+      grid-template-rows: 64px minmax(220px, 1fr) 280px 0 36px;
       grid-template-areas:
-        "topbar  topbar  topbar"
-        "weather radar   extras"
-        "cams    cams    scanner"
-        "news    news    news";
+        "topbar   topbar   topbar"
+        "weather  radar    extras"
+        "cams     cams     scanner"
+        "calendar calendar calendar"
+        "news     news     news";
       gap: 8px;
       padding: 8px;
       min-height: 100vh;
+    }
+    body.has-calendar .hud {
+      grid-template-rows: 64px minmax(220px, 1fr) 280px 92px 36px;
     }
 
     /* ---------- panels ---------- */
@@ -483,6 +487,82 @@
     .loading { color: var(--fg-dim); font-size: 11px; }
     .err { color: var(--red); font-size: 11px; }
 
+    /* ---------- calendar (iCal-driven, region-specific) ---------- */
+    .calendar-panel {
+      grid-area: calendar;
+      display: none;
+      flex-direction: column;
+      padding: 8px 10px;
+      gap: 5px;
+      min-height: 0;
+    }
+    body.has-calendar .calendar-panel { display: flex; }
+
+    .cal-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0 2px;
+    }
+    .cal-title {
+      font-size: 10px;
+      font-weight: 800;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+      color: var(--fg-dim);
+    }
+    .cal-title strong { color: var(--fg-0); }
+    .cal-meta { font-size: 9px; color: var(--fg-dim); font-weight: 700; }
+
+    .cal-strip {
+      display: flex;
+      gap: 6px;
+      overflow-x: auto;
+      flex: 1 1 0;
+      min-height: 0;
+      padding: 0 2px 2px;
+      scrollbar-width: thin;
+    }
+    .cal-event {
+      flex: 0 0 auto;
+      min-width: 138px;
+      max-width: 240px;
+      padding: 6px 9px;
+      background: rgba(255,255,255,0.025);
+      border: 1px solid var(--glass-border);
+      border-radius: 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 1px;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.05);
+    }
+    .cal-event.today {
+      border-color: rgba(48,209,88,0.40);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.10), 0 0 12px rgba(48,209,88,0.16);
+    }
+    .cal-event-date {
+      font-size: 9px;
+      font-weight: 800;
+      letter-spacing: 0.4px;
+      text-transform: uppercase;
+      color: var(--green);
+    }
+    .cal-event.today .cal-event-date { color: var(--yellow); }
+    .cal-event-time {
+      font-size: 9.5px;
+      color: var(--fg-dim);
+      font-weight: 700;
+    }
+    .cal-event-summary {
+      font-size: 11.5px;
+      font-weight: 800;
+      color: var(--fg-0);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      margin-top: 1px;
+    }
+
     /* ---------- conditional banners (holiday / civic) ---------- */
     .banner {
       display: none;
@@ -565,7 +645,7 @@
     @media (max-width: 900px) {
       .hud {
         grid-template-columns: 1fr;
-        grid-template-rows: auto auto 220px auto auto 320px 36px;
+        grid-template-rows: auto auto 220px auto auto 320px 0 36px;
         grid-template-areas:
           "topbar"
           "weather"
@@ -573,10 +653,14 @@
           "extras"
           "cams"
           "scanner"
+          "calendar"
           "news";
         gap: 6px;
         padding: 6px;
         min-height: auto;
+      }
+      body.has-calendar .hud {
+        grid-template-rows: auto auto 220px auto auto 320px 110px 36px;
       }
 
       .topbar {
@@ -771,6 +855,15 @@
     </a>
   </div>
 
+  <!-- calendar (iCal feed, region-specific, hidden if not configured) -->
+  <div class="panel calendar-panel">
+    <div class="cal-head">
+      <div class="cal-title" id="cal-title">Calendar</div>
+      <div class="cal-meta" id="cal-meta">Next 30 days</div>
+    </div>
+    <div class="cal-strip" id="cal-strip"></div>
+  </div>
+
   <!-- local news RSS ticker (bottom) -->
   <div class="panel ticker" id="news">
     <div class="ticker-label" style="color:var(--blue)"><span class="chip-dot" style="background:var(--blue)"></span><span id="news-source">Local News</span></div>
@@ -805,7 +898,12 @@ const REGIONS = {
     power: { name: 'Rhode Island Energy', url: 'https://outagemap.rienergy.com/OMAP' },
     internet: { name: 'Verizon Fios', url: 'https://downdetector.com/status/verizon-fios/' },
     airport: { iata: 'PVD', icao: 'KPVD', name: 'TF Green (PVD)' },
-    tide: { id: '8454000', name: 'Providence, RI' }
+    tide: { id: '8454000', name: 'Providence, RI' },
+    state: 'US-RI',
+    calendar: {
+      name: 'Wheeler School',
+      url: 'webcal://wheelerschool.myschoolapp.com/podium/feed/iCal.aspx?z=%2fTeGdhn07osPZthk8B2Fhuc693aPgkU5aK1aA7esA8EhyTtsj2M8CMPFs6RJHCW24pTSrp0Lf9RcLdCnM7idKg%3d%3d'
+    }
   },
 
   '02739': {
@@ -835,7 +933,8 @@ const REGIONS = {
     power: { name: 'Eversource MA', url: 'https://outagemap.eversource.com/external/default.html' },
     internet: { name: 'Comcast Xfinity', url: 'https://downdetector.com/status/comcast-xfinity/' },
     airport: { iata: 'BOS', icao: 'KBOS', name: 'Boston Logan (BOS)' },
-    tide: { id: '8447930', name: 'Woods Hole, MA' }
+    tide: { id: '8447930', name: 'Woods Hole, MA' },
+    state: 'US-MA'
   },
 
   '11232': {
@@ -857,7 +956,8 @@ const REGIONS = {
     internet: { name: 'Spectrum · Optimum · Verizon', url: 'https://downdetector.com/status/spectrum/' },
     airport: { iata: 'JFK', icao: 'KJFK', name: 'JFK International' },
     tide: { id: '8518750', name: 'The Battery, NY' },
-    civic: { source: 'NotifyNYC', rss: 'https://a858-nycnotify.nyc.gov/notifynyc/notifications/rss', url: 'https://a858-nycnotify.nyc.gov/notifynyc/' }
+    civic: { source: 'NotifyNYC', rss: 'https://a858-nycnotify.nyc.gov/notifynyc/notifications/rss', url: 'https://a858-nycnotify.nyc.gov/notifynyc/' },
+    state: 'US-NY'
   },
 
   '11215': {
@@ -879,7 +979,8 @@ const REGIONS = {
     internet: { name: 'Spectrum · Optimum · Verizon', url: 'https://downdetector.com/status/spectrum/' },
     airport: { iata: 'LGA', icao: 'KLGA', name: 'LaGuardia (LGA)' },
     tide: { id: '8518750', name: 'The Battery, NY' },
-    civic: { source: 'NotifyNYC', rss: 'https://a858-nycnotify.nyc.gov/notifynyc/notifications/rss', url: 'https://a858-nycnotify.nyc.gov/notifynyc/' }
+    civic: { source: 'NotifyNYC', rss: 'https://a858-nycnotify.nyc.gov/notifynyc/notifications/rss', url: 'https://a858-nycnotify.nyc.gov/notifynyc/' },
+    state: 'US-NY'
   },
 
   '91342': {
@@ -1517,6 +1618,124 @@ function initShareMode() {
 }
 
 // ============================================================
+// Calendar (iCal feed parsed in-browser, fetched via CORS proxy)
+// ============================================================
+
+// Minimal RFC 5545 parser — handles VEVENT with SUMMARY/DTSTART/DTEND/LOCATION.
+// Folded continuation lines are unfolded; \, \; \n escapes in SUMMARY are decoded.
+// TZID parameters are not interpreted; floating times are treated as local
+// (good enough for school calendars where the user is in the calendar's timezone).
+function parseICal(text) {
+  const unfolded = text.replace(/\r?\n[ \t]/g, '');
+  const lines = unfolded.split(/\r?\n/);
+  const events = [];
+  let cur = null;
+  for (const line of lines) {
+    if (line === 'BEGIN:VEVENT') cur = {};
+    else if (line === 'END:VEVENT' && cur) { events.push(cur); cur = null; }
+    else if (cur) {
+      const colon = line.indexOf(':');
+      if (colon < 0) continue;
+      const key = line.slice(0, colon);
+      const val = line.slice(colon + 1);
+      const baseKey = key.split(';')[0];
+      if (baseKey === 'SUMMARY') {
+        cur.summary = val.replace(/\\,/g, ',').replace(/\\;/g, ';').replace(/\\n/gi, ' ').trim();
+      } else if (baseKey === 'LOCATION') {
+        cur.location = val;
+      } else if (baseKey === 'DTSTART') {
+        Object.assign(cur, parseICalDate(val, key, 'start'));
+      } else if (baseKey === 'DTEND') {
+        Object.assign(cur, parseICalDate(val, key, 'end'));
+      }
+    }
+  }
+  return events;
+}
+
+function parseICalDate(val, fullKey, prefix) {
+  const isAllDay = fullKey.includes('VALUE=DATE') && !val.includes('T');
+  const isUTC = val.endsWith('Z');
+  const y = parseInt(val.slice(0, 4));
+  const m = parseInt(val.slice(4, 6)) - 1;
+  const d = parseInt(val.slice(6, 8));
+  if (isAllDay) {
+    return { [prefix]: new Date(y, m, d), [prefix + 'AllDay']: true };
+  }
+  const hh = parseInt(val.slice(9, 11)) || 0;
+  const mn = parseInt(val.slice(11, 13)) || 0;
+  const ss = parseInt(val.slice(13, 15)) || 0;
+  const date = isUTC
+    ? new Date(Date.UTC(y, m, d, hh, mn, ss))
+    : new Date(y, m, d, hh, mn, ss);
+  return { [prefix]: date, [prefix + 'AllDay']: false };
+}
+
+async function fetchCalendar() {
+  const r = REGIONS[activeZip];
+  if (!r.calendar) {
+    document.body.classList.remove('has-calendar');
+    return;
+  }
+  document.body.classList.add('has-calendar');
+
+  const titleEl = document.getElementById('cal-title');
+  const stripEl = document.getElementById('cal-strip');
+  titleEl.innerHTML = `Calendar · <strong>${escape(r.calendar.name)}</strong>`;
+  stripEl.innerHTML = '<div class="loading" style="padding:6px 8px;font-size:11px;">Loading…</div>';
+
+  try {
+    // Convert webcal:// → https:// for fetch, then route through allorigins CORS proxy
+    // since myschoolapp.com / iCal feeds rarely send Access-Control-Allow-Origin.
+    const httpsUrl = r.calendar.url.replace(/^webcal:\/\//i, 'https://');
+    const proxyUrl = 'https://api.allorigins.win/raw?url=' + encodeURIComponent(httpsUrl);
+    const text = await fetch(proxyUrl).then(x => {
+      if (!x.ok) throw new Error('HTTP ' + x.status);
+      return x.text();
+    });
+    const events = parseICal(text);
+
+    const now = Date.now();
+    const cutoff = now + 30 * 86400000;
+    const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
+    const upcoming = events
+      .filter(e => e.start && e.start.getTime() >= todayStart.getTime() && e.start.getTime() < cutoff)
+      .sort((a, b) => a.start - b.start)
+      .slice(0, 12);
+
+    if (!upcoming.length) {
+      stripEl.innerHTML = '<div style="padding:6px 8px;font-size:11px;color:var(--fg-dim);">No events in next 30 days</div>';
+      return;
+    }
+
+    const fmtDate = (d) =>
+      d.toLocaleDateString('en-US', { weekday: 'short', month: 'numeric', day: 'numeric' }).toUpperCase();
+    const fmtTime = (d) =>
+      d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    const isToday = (d) => {
+      const t = new Date();
+      return d.getFullYear() === t.getFullYear() &&
+             d.getMonth() === t.getMonth() &&
+             d.getDate() === t.getDate();
+    };
+
+    stripEl.innerHTML = upcoming.map(ev => {
+      const today = isToday(ev.start) ? ' today' : '';
+      const time = ev.startAllDay ? 'All day' : fmtTime(ev.start);
+      return `
+        <div class="cal-event${today}" title="${escape(ev.summary || '')}${ev.location ? ' · ' + escape(ev.location) : ''}">
+          <div class="cal-event-date">${escape(fmtDate(ev.start))}</div>
+          <div class="cal-event-time">${escape(time)}</div>
+          <div class="cal-event-summary">${escape(ev.summary || '(untitled)')}</div>
+        </div>`;
+    }).join('');
+  } catch (e) {
+    console.error('calendar', e);
+    stripEl.innerHTML = '<div class="err" style="padding:6px 8px;font-size:11px;">Calendar unavailable: ' + escape(e.message) + '</div>';
+  }
+}
+
+// ============================================================
 // Refresh orchestration
 // ============================================================
 function refreshAll() {
@@ -1529,6 +1748,7 @@ function refreshAll() {
   loadScanner();
   renderExtras();
   fetchCivic();
+  fetchCalendar();
 }
 
 // initial
@@ -1552,6 +1772,7 @@ window.addEventListener('DOMContentLoaded', () => {
   setInterval(fetchSunMoon, 60 * 60 * 1000);
   setInterval(fetchCivic, 5 * 60 * 1000);
   setInterval(fetchHoliday, 6 * 3600 * 1000);
+  setInterval(fetchCalendar, 30 * 60 * 1000);
 });
 </script>
 
