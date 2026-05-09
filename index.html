@@ -1138,7 +1138,7 @@ const REGIONS = {
       { name: 'I-95 S @ Garden St',           url: 'https://www.dot.ri.gov/img/travel/camimages/95_41.0_S_CAM%20-%20Garden%20St.jpg' }
     ],
     scanner: { id: 33869, label: 'Providence Fire Dispatch' },
-    news: { source: 'WPRI', rss: 'https://www.wpri.com/feed/' },
+    news: { source: 'Breaking · RI', query: '(breaking OR fatal OR shooting OR stabbing OR fire OR evacuation OR "amber alert" OR crash OR accident OR closed OR explosion OR active) (providence OR "rhode island" OR pawtucket OR "east providence")' },
     power: { name: 'Rhode Island Energy', url: 'https://outagemap.rienergy.com/OMAP' },
     internet: { name: 'Verizon Fios', url: 'https://downdetector.com/status/verizon-fios/' },
     airport: { iata: 'PVD', icao: 'KPVD', name: 'TF Green (PVD)' },
@@ -1174,7 +1174,7 @@ const REGIONS = {
       { name: 'New Bedford Harbor · WPRI', url: 'https://www.wpri.com/live-cams/new-bedford-harbor/' }
     ],
     scanner: { id: 6502, label: 'Southern RI / SE MA / E CT Public Safety' },
-    news: { source: 'SouthCoastToday', rss: 'https://www.southcoasttoday.com/arc/outboundfeeds/rss/' },
+    news: { source: 'Breaking · SE Mass', query: '(breaking OR fatal OR shooting OR stabbing OR fire OR evacuation OR "amber alert" OR crash OR accident OR explosion OR active) ("south coast" OR "new bedford" OR mattapoisett OR fairhaven OR wareham OR "fall river" OR marion)' },
     power: { name: 'Eversource MA', url: 'https://outagemap.eversource.com/external/default.html' },
     internet: { name: 'Comcast Xfinity', url: 'https://downdetector.com/status/comcast-xfinity/' },
     airport: { iata: 'BOS', icao: 'KBOS', name: 'Boston Logan (BOS)' },
@@ -1201,7 +1201,7 @@ const REGIONS = {
       { name: 'Prospect Expwy @ 19 St',    id: '3c079db6-117c-4e79-94ed-5178c1517091' }
     ],
     scanner: { id: 40184, label: 'NYPD Citywide 1 · NYC' },
-    news: { source: 'Gothamist', rss: 'https://gothamist.com/feed' },
+    news: { source: 'Breaking · NYC', query: '(breaking OR fatal OR shooting OR stabbing OR fire OR evacuation OR "amber alert" OR crash OR explosion OR active OR mta OR subway) (brooklyn OR "new york" OR nyc OR manhattan)' },
     power: { name: 'Con Edison', url: 'https://apps.coned.com/CEOutageMap/external/default.html' },
     internet: { name: 'Spectrum · Optimum · Verizon', url: 'https://downdetector.com/status/spectrum/' },
     airport: { iata: 'JFK', icao: 'KJFK', name: 'JFK International' },
@@ -1225,7 +1225,7 @@ const REGIONS = {
       { name: 'Prospect Expwy @ 19 St',    id: '3c079db6-117c-4e79-94ed-5178c1517091' }
     ],
     scanner: { id: 40184, label: 'NYPD Citywide 1 · NYC' },
-    news: { source: 'Gothamist', rss: 'https://gothamist.com/feed' },
+    news: { source: 'Breaking · NYC', query: '(breaking OR fatal OR shooting OR stabbing OR fire OR evacuation OR "amber alert" OR crash OR explosion OR active OR mta OR subway) (brooklyn OR "new york" OR nyc OR manhattan)' },
     power: { name: 'Con Edison', url: 'https://apps.coned.com/CEOutageMap/external/default.html' },
     internet: { name: 'Spectrum · Optimum · Verizon', url: 'https://downdetector.com/status/spectrum/' },
     airport: { iata: 'LGA', icao: 'KLGA', name: 'LaGuardia (LGA)' },
@@ -1249,7 +1249,7 @@ const REGIONS = {
       { name: 'I-5 @ Olive',                 url: 'https://cwwp2.dot.ca.gov/data/d7/cctv/image/i537olive/i537olive.jpg' }
     ],
     scanner: { id: 18435, label: 'LAFD North Division · San Fernando Valley' },
-    news: { source: 'KTLA', rss: 'https://ktla.com/feed/' },
+    news: { source: 'Breaking · LA', query: '(breaking OR fatal OR shooting OR stabbing OR fire OR wildfire OR evacuation OR "amber alert" OR crash OR earthquake OR explosion OR active) (sylmar OR "san fernando valley" OR "los angeles" OR burbank OR "north hollywood")' },
     power: { name: 'LADWP', url: 'https://www.ladwp.com/account/customer-service/outages/outage-map' },
     internet: { name: 'Spectrum · AT&T', url: 'https://downdetector.com/status/spectrum/' },
     airport: { iata: 'BUR', icao: 'KBUR', name: 'Hollywood Burbank (BUR)' },
@@ -1608,16 +1608,32 @@ async function fetchNews() {
   const trackEl = document.getElementById('news-track');
 
   try {
-    const url = 'https://api.rss2json.com/v1/api.json?rss_url=' + encodeURIComponent(r.news.rss);
+    // Google News RSS search lets us scope to "{breaking-keywords} {region-terms}".
+    // The result is automatically pubDate-sorted; we then filter to last 48 hours
+    // so silence (no recent breaking news) stays silent rather than recycling stale items.
+    const feedUrl = r.news.rss ||
+      `https://news.google.com/rss/search?q=${encodeURIComponent(r.news.query)}&hl=en-US&gl=US&ceid=US:en`;
+    const url = 'https://api.rss2json.com/v1/api.json?rss_url=' + encodeURIComponent(feedUrl);
     const data = await fetch(url).then(x => x.json());
     if (data.status !== 'ok') throw new Error(data.message || 'feed error');
-    const items = (data.items || []).slice(0, 12).map(it => {
-      const t = (it.title || '').replace(/\s+/g, ' ').trim();
-      return escape(t);
-    });
+
+    const cutoff = Date.now() - 48 * 3600 * 1000;
+    const items = (data.items || [])
+      .filter(it => {
+        if (!it.pubDate) return true;
+        const t = new Date(it.pubDate).getTime();
+        return Number.isFinite(t) ? t >= cutoff : true;
+      })
+      .slice(0, 10)
+      .map(it => {
+        // Google News appends " - Source Name" at the end of each title; strip it
+        const t = (it.title || '').replace(/\s+/g, ' ').replace(/\s*-\s*[^-]+$/, '').trim();
+        return escape(t);
+      });
+
     trackEl.innerHTML = items.length
       ? tickerHTML(items)
-      : tickerHTML(['No recent headlines from ' + r.news.source]);
+      : tickerHTML([`No active breaking news in ${r.label || 'region'} (last 48h)`]);
   } catch (e) {
     console.error(e);
     trackEl.innerHTML = tickerHTML(['News feed unavailable: ' + escape(e.message)]);
