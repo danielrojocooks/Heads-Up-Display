@@ -140,6 +140,21 @@
       white-space: nowrap;
     }
     .chip-emoji { font-size: 14px; line-height: 1; }
+
+    .refresh-indicator {
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: 0.4px;
+      text-transform: uppercase;
+      color: var(--fg-dim);
+      padding: 4px 8px;
+      border-radius: 6px;
+      background: rgba(255,255,255,0.02);
+      border: 1px solid rgba(255,255,255,0.06);
+      white-space: nowrap;
+      align-self: center;
+    }
+    .refresh-indicator.stale { color: var(--yellow); border-color: rgba(255,214,10,0.30); }
     .chip-dot {
       width: 7px; height: 7px; border-radius: 999px;
       background: var(--green);
@@ -268,7 +283,7 @@
 
     .wx-stats {
       display: grid;
-      grid-template-columns: repeat(4, 1fr);
+      grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
       gap: 6px;
     }
     .wx-stat {
@@ -981,6 +996,7 @@
     <div class="zip-toggle" id="zip-toggle"></div>
     <div></div>
     <div class="chips" id="chips">
+      <div class="refresh-indicator" id="refresh-indicator" title="Last successful refresh of any data source">↻ Just now</div>
       <button class="chip share-btn" id="share-btn" type="button" title="Blur identifying labels for screenshot sharing">
         <div class="chip-dot"></div>
         <div>
@@ -1034,6 +1050,13 @@
         <div class="wx-stat-text">
           <div class="wx-stat-label">Rain 24h</div>
           <div class="wx-stat-value" id="wx-stat-rain-val">—</div>
+        </div>
+      </div>
+      <div class="wx-stat" id="wx-stat-aqi">
+        <div class="wx-stat-emoji">🫁</div>
+        <div class="wx-stat-text">
+          <div class="wx-stat-label">Air Quality</div>
+          <div class="wx-stat-value" id="wx-stat-aqi-val">—</div>
         </div>
       </div>
     </div>
@@ -1273,9 +1296,15 @@ const ZIP_ORDER = ['02906', '02739', '11232', '11215', '91342'];
 // ============================================================
 // State
 // ============================================================
+// Persisted ZIP — restore last-viewed region from localStorage if present
 let activeZip = ZIP_ORDER[0];
+try {
+  const saved = localStorage.getItem('hud-active-zip');
+  if (saved && REGIONS[saved]) activeZip = saved;
+} catch {}
 let map, radarLayer;
 let camRefreshTimer = null;
+let lastRefresh = Date.now();
 
 // ============================================================
 // Utilities
@@ -1333,6 +1362,7 @@ function renderToggle() {
 function setZip(zip) {
   if (!REGIONS[zip] || zip === activeZip) return;
   activeZip = zip;
+  try { localStorage.setItem('hud-active-zip', zip); } catch {}
   renderToggle();
   refreshAll();
 }
@@ -2242,6 +2272,62 @@ async function fetchCalendar() {
 }
 
 // ============================================================
+// Air Quality Index — World Air Quality Index project (waqi.info)
+// Demo token works with rate limits; for production grab a free
+// key at aqicn.org/api and replace 'demo'.
+// ============================================================
+async function fetchAqi() {
+  const r = REGIONS[activeZip];
+  const setStat = (val, tone) => setWxStat('aqi', val, tone);
+  setStat('Loading…', null);
+
+  try {
+    const url = `https://api.waqi.info/feed/geo:${r.lat};${r.lon}/?token=demo`;
+    const data = await fetch(url).then(x => x.json());
+    if (data.status !== 'ok') throw new Error(data.data || 'WAQI error');
+    const aqi = data?.data?.aqi;
+    if (typeof aqi !== 'number') throw new Error('No AQI value');
+
+    // EPA AQI categories
+    let category, tone;
+    if (aqi <= 50)        { category = 'Good';            tone = 'green'; }
+    else if (aqi <= 100)  { category = 'Moderate';        tone = 'yellow'; }
+    else if (aqi <= 150)  { category = 'Sensitive';       tone = 'yellow'; }
+    else if (aqi <= 200)  { category = 'Unhealthy';       tone = 'red'; }
+    else if (aqi <= 300)  { category = 'Very Unhealthy';  tone = 'red'; }
+    else                  { category = 'Hazardous';       tone = 'red'; }
+
+    setStat(`${aqi} · ${category}`, tone);
+    markRefreshed();
+  } catch (e) {
+    console.error('aqi', e);
+    setStat('Unavailable', null);
+  }
+}
+
+// ============================================================
+// Refresh indicator — small "↻ updated Xs ago" badge
+// ============================================================
+function markRefreshed() {
+  lastRefresh = Date.now();
+  updateRefreshDisplay();
+}
+
+function updateRefreshDisplay() {
+  const el = document.getElementById('refresh-indicator');
+  if (!el) return;
+  const ago = Math.floor((Date.now() - lastRefresh) / 1000);
+  let text;
+  if (ago < 5)         text = 'Just now';
+  else if (ago < 60)   text = `${ago}s ago`;
+  else if (ago < 3600) text = `${Math.floor(ago / 60)}m ago`;
+  else                 text = `${Math.floor(ago / 3600)}h ago`;
+  el.textContent = `↻ ${text}`;
+  // Tone yellow if data is older than 15 minutes
+  el.classList.toggle('stale', ago > 900);
+}
+
+// ============================================================
 // Refresh orchestration
 // ============================================================
 function refreshAll() {
@@ -2257,6 +2343,8 @@ function refreshAll() {
   fetchCalendar();
   fetchHoliday();
   checkParking();
+  fetchAqi();
+  markRefreshed();
 }
 
 // initial
@@ -2283,6 +2371,8 @@ window.addEventListener('DOMContentLoaded', () => {
   setInterval(fetchCivic, 5 * 60 * 1000);
   setInterval(fetchHoliday, 6 * 3600 * 1000);
   setInterval(fetchCalendar, 30 * 60 * 1000);
+  setInterval(fetchAqi, 30 * 60 * 1000);
+  setInterval(updateRefreshDisplay, 30 * 1000);
 });
 </script>
 
