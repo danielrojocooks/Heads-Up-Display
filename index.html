@@ -198,6 +198,16 @@
       font-weight: 700;
       line-height: 36px;
       white-space: nowrap;
+      color: inherit;
+    }
+    a.ticker-link {
+      text-decoration: none;
+      cursor: pointer;
+      transition: color 0.15s ease;
+    }
+    a.ticker-link:hover {
+      color: var(--blue);
+      text-decoration: underline;
     }
     @keyframes tick {
       from { transform: translateX(0); }
@@ -1284,8 +1294,16 @@ function fIcon(short) {
 }
 
 function tickerHTML(items) {
-  // RAF-friendly: duplicate items so the marquee loops seamlessly
-  const html = items.map(t => `<div class="ticker-item">${t}</div>`).join('');
+  // Accepts strings (plain text item) or { title, url } objects (clickable).
+  // Duplicate the rendered HTML so the marquee loops seamlessly.
+  const html = items.map(it => {
+    const obj = typeof it === 'string' ? { title: it, url: '' } : (it || {});
+    const title = escape(obj.title || '');
+    if (obj.url) {
+      return `<a class="ticker-item ticker-link" href="${escape(obj.url)}" target="_blank" rel="noopener">${title}</a>`;
+    }
+    return `<div class="ticker-item">${title}</div>`;
+  }).join('');
   return html + html;
 }
 
@@ -1626,9 +1644,10 @@ async function fetchNews() {
       })
       .slice(0, 10)
       .map(it => {
-        // Google News appends " - Source Name" at the end of each title; strip it
-        const t = (it.title || '').replace(/\s+/g, ' ').replace(/\s*-\s*[^-]+$/, '').trim();
-        return escape(t);
+        // Google News appends " - Source Name" at the end of each title; strip it.
+        // Title goes raw — tickerHTML() handles escaping.
+        const title = (it.title || '').replace(/\s+/g, ' ').replace(/\s*-\s*[^-]+$/, '').trim();
+        return { title, url: it.link || it.url || '' };
       });
 
     trackEl.innerHTML = items.length
